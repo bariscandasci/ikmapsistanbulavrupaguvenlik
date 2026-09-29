@@ -2165,7 +2165,7 @@ const ISTANBUL_AVRUPA_DATA = {
     },
     {
       "id": "B1",
-      "name": "Marmaray: Gebze - Halkalı",
+      "name": "Marmaray: Sirkeci → Halkalı",
       "mode": "marmaray",
       "verified": true,
       "operator": "TCDD Taşımacılık",
