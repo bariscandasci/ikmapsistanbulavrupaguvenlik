@@ -20,7 +20,7 @@ const assert = (cond, message) => {
   if (!cond) throw new Error(message);
 };
 
-assert(data.map.center[0] === 41.03 && data.map.center[1] === 28.85 && data.map.zoom === 10, "harita merkezi");
+assert(data.map.center[0] === 41.04 && data.map.center[1] === 28.82 && data.map.zoom === 11, "harita merkezi");
 assert(data.projects.length === 7, "PROJE_KONUM kayıtları");
 ["Torium", "Mall of AVM", "Medipol Hastanesi", "Eti DPO", "Liv Hospital", "Mengenler", "Ortaköy Republika"].forEach((name) => {
   const project = data.projects.find((item) => item.name === name);

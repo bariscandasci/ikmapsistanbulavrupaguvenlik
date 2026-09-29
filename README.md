@@ -10,7 +10,7 @@ npm start
 
 Uygulama `http://127.0.0.1:8820` adresinde açılır. Ankara projesi 8812 portunda kaldığı için bu iskelet 8820 kullanır. Python vekili için `npm run start:py`. Rota duman testi: `npm test`.
 
-Harita Leaflet ile **41.03, 28.85** merkezinde ve **zoom 10** ile tüm Avrupa yakasını kapsayacak kadrajda açılır. Karolar OpenStreetMap’tendir.
+Harita Leaflet ile **41.04, 28.82** merkezinde ve **zoom 11** ile Esenyurt–Başakşehir–Şişli–Beşiktaş aksında açılır. Karolar OpenStreetMap’tendir.
 
 ## Yerleşim
 

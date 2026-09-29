@@ -6,7 +6,7 @@
  * projects[] PROJE_KONUM tablosundaki 7 Avrupa yakası kaydıdır.
  * Kart alanları SECURITY_PROJECT_FIELDS ile tanımlıdır.
  *
- * Harita: merkez [41.03, 28.85], zoom 10. Avrupa yakasının tamamı kadrajda kalır.
+ * Harita: merkez [41.04, 28.82], zoom 11. Esenyurt–Başakşehir–Şişli–Beşiktaş aksı.
  *
  * Toplu taşıma omurgası (modüler hat listesi):
  *   M1A, M1B, M2 (+ Seyrantepe kolu), M3, M7, M9, M11,
@@ -102,10 +102,10 @@ function createSecurityProject(input) {
 const ISTANBUL_AVRUPA_DATA = {
   "map": {
     "center": [
-      41.03,
-      28.85
+      41.04,
+      28.82
     ],
-    "zoom": 10,
+    "zoom": 11,
     "label": "İstanbul Avrupa Yakası"
   },
   "urgentProjectIds": [],

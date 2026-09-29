@@ -64,7 +64,7 @@ function escapeHtml(value) {
   }[ch]));
 }
 
-const mapView = DATA.map || { center: [41.03, 28.85], zoom: 10 };
+const mapView = DATA.map || { center: [41.04, 28.82], zoom: 11 };
 const map = L.map("map", { zoomControl: true }).setView(mapView.center, mapView.zoom);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19,
@@ -274,33 +274,6 @@ function rebuildProjectSelect() {
 }
 rebuildProjectSelect();
 
-function renderCatalog() {
-  const projects = activeProjects().slice().sort((a, b) => a.name.localeCompare(b.name, "tr"));
-  resultsList.innerHTML = "";
-  resultsHeading.textContent = projects.length ? "Açık projeler (" + projects.length + ")" : "";
-  emptyState.classList.toggle("hidden", projects.length > 0);
-  emptyState.textContent = "Sonuçları görmek için yukarıdan bir seçim yapın.";
-  projects.forEach((project) => {
-    const card = document.createElement("button");
-    card.type = "button";
-    card.className = "result-card";
-    card.innerHTML = `
-      <div class="min-w-0">
-        <div class="font-semibold text-slate-800 truncate">${escapeHtml(project.name)}</div>
-        <div class="text-xs text-slate-500 truncate">${escapeHtml(projectSubtitle(project))}</div>
-      </div>
-      ${termsMarkup(securityTerms(project), project.referral)}`;
-    card.addEventListener("click", () => {
-      document.querySelectorAll(".result-card").forEach((item) => item.classList.remove("result-card-active"));
-      card.classList.add("result-card-active");
-      map.setView([project.lat, project.lng], 14, { animate: true });
-      const marker = projectMarkersById[project.id];
-      if (marker) marker.openTooltip();
-    });
-    resultsList.appendChild(card);
-  });
-}
-
 function clearResults() {
   resultsList.innerHTML = "";
   resultsHeading.textContent = "";
@@ -308,10 +281,6 @@ function clearResults() {
   routesLayer.clearLayers();
   Object.values(districtMarkersById).forEach((marker) => markersLayer.removeLayer(marker));
   for (const key in districtMarkersById) delete districtMarkersById[key];
-  if (currentMode === "origin-to-project" && !currentOriginId()) {
-    renderCatalog();
-    return;
-  }
   emptyState.classList.remove("hidden");
   emptyState.textContent = "Sonuçları görmek için yukarıdan bir seçim yapın.";
 }
@@ -794,8 +763,6 @@ document.getElementById("inactiveModalSave").addEventListener("click", () => {
   inactiveModal.classList.add("hidden");
   runSearch();
 });
-
-renderCatalog();
 
 window.ikApp = {
   runSearch: runSearch,
