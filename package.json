@@ -1,0 +1,15 @@
+{
+  "name": "ikmapsistanbulavrupaguvenlik",
+  "version": "0.1.0",
+  "private": true,
+  "description": "İstanbul Avrupa Yakası güvenlik projeleri — harita, aday eşleştirme ve toplu taşıma iskeleti",
+  "scripts": {
+    "start": "node server.js",
+    "start:py": "python3 server.py",
+    "test": "node scripts/smoke-routing.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {}
+}
