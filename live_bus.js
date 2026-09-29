@@ -1,16 +1,32 @@
-/**
- * Canlı sefer kapısı. Tarayıcı İETT'ye doğrudan gitmez.
- * Aynı kaynaktaki /api/live-arrival isteği iletir.
- *
- * Durak kodu yoksa, servis kapalıysa veya tablo boşsa fırlatmaz:
- * çağıranın verdiği fallbackWaitMin (hat sefer aralığı / 2) ile döner.
- * Bu, routing_engine.withLiveFallback ile aynı sözleşmedir.
- */
+// Canlı durak varışı. Tarayıcı EGO sunucusuna doğrudan istek atamaz (CORS yok);
+// aynı kaynaktaki /api/live-arrival bu adresi sunucu tarafında iletir.
+// Servis kapalıysa, boş dönerse veya durak kodu yoksa hiç fırlatmaz:
+// çağıranın verdiği fallbackWaitMin (hat sefer aralığı / 2) ile döner.
+//
+// Gerçek istek şablonu (EGO Cep'te ile aynı uç):
+//   GET https://egocptsrvand.ego.gov.tr/mblSrv14/service.asp
+//       ?FNC=Otobus&VER=3.1.0&LAN=tr&HAT={hat}&DURAK={durak}
+// Cevap: { table: [ { hat_no, saniye, sure, ... } ], status: "TRUE" }
+// saniye, durağa kalan saniyedir. 999999 ve "Geçti" o aracı elemek içindir.
+
 (function () {
+  var EGO_REQUEST_TEMPLATE =
+    "https://egocptsrvand.ego.gov.tr/mblSrv14/service.asp?FNC=Otobus&VER=3.1.0&LAN=tr&HAT={hat}&DURAK={durak}";
   var PROXY_PATH = "/api/live-arrival";
   var CACHE_MS = 20000;
   var cache = new Map();
   var inflight = new Map();
+
+  function egoStopNo(stopId) {
+    var match = String(stopId || "").match(/^ego_(\d+)$/);
+    return match ? match[1] : null;
+  }
+
+  function hatCode(lineId, hatNo) {
+    if (hatNo) return String(hatNo);
+    var match = String(lineId || "").match(/^ego_line_(.+)$/);
+    return match ? match[1] : null;
+  }
 
   function staticResult(stopId, lineId, hatNo, fallbackWaitMin) {
     var wait = Number(fallbackWaitMin);
@@ -20,22 +36,17 @@
       stopId: stopId || null,
       lineId: lineId || null,
       hatNo: hatNo || null,
+      stopNo: egoStopNo(stopId),
     };
-  }
-
-  function liveStopNo(stopId, explicit) {
-    if (explicit) return String(explicit);
-    var match = String(stopId || "").match(/^iett_(\d+)$/);
-    return match ? match[1] : null;
   }
 
   function liveWaitMin(rows, hat) {
     var best = null;
     (rows || []).forEach(function (row) {
-      var codes = [row.hat_no, row.hat_kod].map(function (value) {
+      var codes = [row.hat_no, row.hat_kod, row.hat_kisa_kod].map(function (value) {
         return value == null ? "" : String(value);
       });
-      if (codes.indexOf(String(hat)) === -1) return;
+      if (codes.indexOf(hat) === -1) return;
       var seconds = Number(row.saniye);
       if (!Number.isFinite(seconds) || seconds >= 999000) return;
       if (/geçti/i.test(String(row.sure || ""))) return;
@@ -51,6 +62,7 @@
     var hit = cache.get(key);
     if (hit && Date.now() - hit.at < CACHE_MS) return Promise.resolve(hit.minutes);
     if (inflight.has(key)) return inflight.get(key);
+
     var url = PROXY_PATH + "?hat=" + encodeURIComponent(hat) + "&durak=" + encodeURIComponent(durak);
     var pending = fetch(url, { headers: { Accept: "application/json" } })
       .then(function (res) {
@@ -59,7 +71,7 @@
       })
       .then(function (body) {
         var minutes = liveWaitMin(body && body.table, hat);
-        if (minutes == null) throw new Error("no live trip");
+        if (minutes == null) throw new Error("no live bus");
         cache.set(key, { at: Date.now(), minutes: minutes });
         return minutes;
       })
@@ -72,9 +84,9 @@
 
   function getLiveBusArrival(stopId, lineId, options) {
     var opts = options || {};
-    var hat = opts.hatNo ? String(opts.hatNo) : null;
+    var hat = hatCode(lineId, opts.hatNo);
     var fallback = staticResult(stopId, lineId, hat, opts.fallbackWaitMin);
-    var durak = liveStopNo(stopId, opts.liveStopNo);
+    var durak = egoStopNo(stopId);
     if (!hat || !durak) return Promise.resolve(fallback);
     return fetchArrival(hat, durak)
       .then(function (minutes) {
@@ -85,6 +97,7 @@
           lineId: lineId,
           hatNo: hat,
           stopNo: durak,
+          requestTemplate: EGO_REQUEST_TEMPLATE,
         };
       })
       .catch(function () {
@@ -92,5 +105,8 @@
       });
   }
 
-  window.LiveBus = { getLiveBusArrival: getLiveBusArrival };
+  window.LiveBus = {
+    getLiveBusArrival: getLiveBusArrival,
+    requestTemplate: EGO_REQUEST_TEMPLATE,
+  };
 })();

@@ -1,347 +1,12 @@
 /**
- * ISTANBUL_AVRUPA_DATA — İstanbul Avrupa Yakası Güvenlik Projeleri iskeleti.
- *
- * Classic <script> olarak yüklenir (ES module değil). Ankara ikmapsv2 veri
- * modelinin (ilçe / durak / hat / hub) Avrupa yakasına indirgenmiş halidir.
- * projects[] PROJE_KONUM tablosundaki 7 Avrupa yakası kaydıdır.
- * Kart alanları SECURITY_PROJECT_FIELDS ile tanımlıdır.
- *
- * Harita: merkez [41.04, 28.82], zoom 11. Esenyurt–Başakşehir–Şişli–Beşiktaş aksı.
- *
- * Toplu taşıma omurgası (modüler hat listesi):
- *   M1A, M1B, M2 (+ Seyrantepe kolu), M3, M7, M9, M11,
- *   T1, T4, T5, Marmaray (Sirkeci–Halkalı), İETT metrobüs (Beylikdüzü–Zincirlikuyu).
- * Raylı durak koordinatları ikmapsistanbulanadolu OSM/Overpass çıkışındandır
- * (2026-09-07). Metrobüs'ün Söğütlüçeşme uzantısı ve 142 / 142ES / 144
- * beslemesi transit_graph.js içindedir. Çizim, biniş ile iniş arasındaki
- * istasyonları zincirler.
+ * ANKARA_DATA — Ankara ikmapsv2 ile aynı şema.
+ * Projeler PROJE_KONUM İstanbul güvenlik kayıtlarıdır.
+ * Durak ve hatlar İstanbul Avrupa omurgasıdır (M1A, M1B, M2, M3, M7, M9, M11,
+ * T1, T4, T5, Marmaray, Metrobüs, 142 / 142ES / 144).
+ * Graf ve çizim transit_network.json + transit_network_geometry.json üzerinden
+ * Ankara app.js motorunu kullanır.
  */
-
-const SECURITY_PROJECT_FIELDS = {
-  id: { type: "string", required: true },
-  name: { type: "string", required: true, label: "Proje adı" },
-  sector: { type: "string", default: "Güvenlik" },
-  position: {
-    type: "enum",
-    label: "Pozisyon",
-    values: ["Silahlı Güvenlik", "Silahsız Güvenlik", "Danışma", "Gözetim"],
-  },
-  armed: { type: "enum", label: "Silahlı / Silahsız", values: ["silahli", "silahsiz"] },
-  duty: { type: "enum", label: "Danışma / Gözetim", values: ["danisma", "gozetim", "karma"] },
-  shiftPattern: { type: "enum", label: "Vardiya", values: ["8/16", "12/36", "2+2+2"] },
-  shift: { type: "string", label: "Çalışma saati" },
-  leave: { type: "string", label: "İzin" },
-  meal: { type: "string", label: "Yemek" },
-  transport: { type: "string", label: "Yol" },
-  shuttle: { type: "boolean", label: "Servis imkanı" },
-  lodging: { type: "string", label: "Lojman" },
-  address: { type: "string", required: true },
-  district: { type: "string", label: "Semt" },
-  location: { type: "string", label: "Lokasyon" },
-  lat: { type: "number", required: true },
-  lng: { type: "number", required: true },
-  accessStopId: { type: "string" },
-  mapsUrl: { type: "string", label: "Konum" },
-  salary: { type: "string", label: "Maaş" },
-  payType: { type: "string", label: "Net / Brüt" },
-  age: { type: "number", label: "Yaş sınırı" },
-  gender: { type: "enum", values: ["Kadın/Erkek", "Kadın", "Erkek"] },
-  note: { type: "string", label: "Ek" },
-  operation: { type: "string", label: "Operasyon" },
-  hr: { type: "string", label: "İK" },
-  referral: { type: "string", label: "Yönlendirme" },
-  capacity: { type: "number", label: "Kontenjan" },
-  urgent: { type: "boolean", default: false },
-  active: { type: "boolean", default: true },
-};
-
-function createSecurityProject(input) {
-  const src = input || {};
-  const position = src.position ? String(src.position) : "";
-  let capacity = src.capacity;
-  if (capacity === "" || capacity == null) capacity = null;
-  else capacity = Number(capacity);
-  let age = src.age;
-  if (age === "" || age == null) age = null;
-  else age = Number(age);
-  return {
-    id: src.id || ("proj_" + Date.now().toString(36)),
-    name: String(src.name || "").trim(),
-    sector: "Güvenlik",
-    position: position,
-    armed: src.armed || (position === "Silahlı Güvenlik" ? "silahli" : position ? "silahsiz" : ""),
-    duty: src.duty || (position === "Danışma" ? "danisma" : position ? "gozetim" : ""),
-    shiftPattern: src.shiftPattern || "",
-    shift: src.shift || "",
-    leave: src.leave || "",
-    meal: src.meal || "",
-    transport: src.transport || "",
-    shuttle: Boolean(src.shuttle),
-    lodging: src.lodging || "",
-    address: String(src.address || "").trim(),
-    district: src.district || "",
-    location: src.location || "",
-    lat: Number(src.lat),
-    lng: Number(src.lng),
-    accessStopId: src.accessStopId || null,
-    mapsUrl: src.mapsUrl || "",
-    salary: src.salary || "",
-    payType: src.payType || "",
-    age: Number.isFinite(age) ? age : null,
-    gender: src.gender || "",
-    note: src.note || "",
-    operation: src.operation || "",
-    hr: src.hr || "",
-    referral: src.referral || "",
-    capacity: Number.isFinite(capacity) ? capacity : null,
-    urgent: Boolean(src.urgent),
-    active: src.active !== false,
-  };
-}
-
-const ISTANBUL_AVRUPA_DATA = {
-  "map": {
-    "center": [
-      41.04,
-      28.82
-    ],
-    "zoom": 11,
-    "label": "İstanbul Avrupa Yakası"
-  },
-  "urgentProjectIds": [],
-  "projects": [
-    {
-      "id": "proj_torium",
-      "name": "Torium",
-      "sector": "Güvenlik",
-      "position": "",
-      "armed": "",
-      "duty": "",
-      "shiftPattern": "2+2+2",
-      "shift": "",
-      "leave": "4 çalış 2 izin",
-      "meal": "PROJEDEN + 5000 TL MULTİNER",
-      "transport": "",
-      "shuttle": false,
-      "lodging": "KÜÇÜKÇEKMECE LOJMAN",
-      "address": "Haramidere, Beylikdüzü",
-      "district": "Beylikdüzü",
-      "location": "Haramidere",
-      "lat": 41.0041831,
-      "lng": 28.6878147,
-      "accessStopId": "mb_haramidere",
-      "mapsUrl": "https://maps.app.goo.gl/ESPQViaQyKWHjTES8",
-      "salary": "40.000 TL",
-      "payType": "Brüt maaş",
-      "age": 35,
-      "gender": "Erkek",
-      "note": "40.000 TL MAAŞ 5000 TL MULTİNET 2+2+2",
-      "operation": "SADİR SELÇUK ERKAN",
-      "hr": "ANIL YOGURTÇU",
-      "referral": "Projeye yönlendirilecek",
-      "capacity": null,
-      "urgent": false,
-      "active": true
-    },
-    {
-      "id": "proj_mall_of_avm",
-      "name": "Mall of AVM",
-      "sector": "Güvenlik",
-      "position": "",
-      "armed": "",
-      "duty": "",
-      "shiftPattern": "2+2+2",
-      "shift": "",
-      "leave": "4 çalış 2 izin",
-      "meal": "PROJEDEN + 5000 TL MULTİNER",
-      "transport": "",
-      "shuttle": false,
-      "lodging": "KÜÇÜKÇEKMECE LOJMAN",
-      "address": "İkitelli, Başakşehir",
-      "district": "Başakşehir",
-      "location": "İkitelli",
-      "lat": 41.0625272,
-      "lng": 28.8075256,
-      "accessStopId": "stop_masko",
-      "mapsUrl": "https://maps.app.goo.gl/K8EXeDzgic3XpkXu5",
-      "salary": "40.000 TL",
-      "payType": "Brüt maaş",
-      "age": 35,
-      "gender": "Erkek",
-      "note": "40.000 TL MAAŞ 5000 TL MULTİNET 2+2+2",
-      "operation": "OKTAY AHMET KARAKAYA",
-      "hr": "ANIL YOGURTÇU",
-      "referral": "Projeye yönlendirilecek",
-      "capacity": null,
-      "urgent": false,
-      "active": true
-    },
-    {
-      "id": "proj_medipol",
-      "name": "Medipol Hastanesi",
-      "sector": "Güvenlik",
-      "position": "",
-      "armed": "",
-      "duty": "",
-      "shiftPattern": "2+2+2",
-      "shift": "",
-      "leave": "4 çalış 2 izin",
-      "meal": "PROJEDEN + 5000 TL MULTİNER",
-      "transport": "3.628 TL",
-      "shuttle": false,
-      "lodging": "KÜÇÜKÇEKMECE LOJMAN",
-      "address": "Yenibosna, Bahçelievler",
-      "district": "Bahçelievler",
-      "location": "Yenibosna",
-      "lat": 40.9983995,
-      "lng": 28.8304931,
-      "accessStopId": "mb_yenibosna",
-      "mapsUrl": "https://maps.app.goo.gl/mT9umf1AK6sw8UHW8",
-      "salary": "35.872 TL",
-      "payType": "Brüt maaş",
-      "age": 35,
-      "gender": "Erkek",
-      "note": "39500 TL MAAŞ PROJEDEN YEMEK 2+2+2",
-      "operation": "ZEKERİYA GÜNEY",
-      "hr": "BURCU BAYRAK",
-      "referral": "Projeye yönlendirilecek",
-      "capacity": null,
-      "urgent": false,
-      "active": true
-    },
-    {
-      "id": "proj_eti_dpo",
-      "name": "Eti DPO",
-      "sector": "Güvenlik",
-      "position": "",
-      "armed": "",
-      "duty": "",
-      "shiftPattern": "2+2+2",
-      "shift": "",
-      "leave": "4 çalış 2 izin",
-      "meal": "11.000 TL NAKİT YEMEK",
-      "transport": "3.628 TL",
-      "shuttle": false,
-      "lodging": "",
-      "address": "Akçaburgaz, Esenyurt",
-      "district": "Esenyurt",
-      "location": "Akçaburgaz",
-      "lat": 41.0792312,
-      "lng": 28.6354638,
-      "accessStopId": "mb_beylikduzu",
-      "mapsUrl": "https://maps.app.goo.gl/y5D1vJhRpyJyauoa7",
-      "salary": "45.372 TL",
-      "payType": "Brüt maaş",
-      "age": 30,
-      "gender": "Erkek",
-      "note": "60000 TL HERŞEY DAHİL 2+2+2",
-      "operation": "SELİM BAYRAM",
-      "hr": "BURCU BAYRAK",
-      "referral": "Projeye yönlendirilecek",
-      "capacity": null,
-      "urgent": false,
-      "active": true
-    },
-    {
-      "id": "proj_liv_hospital",
-      "name": "Liv Hospital",
-      "sector": "Güvenlik",
-      "position": "",
-      "armed": "",
-      "duty": "",
-      "shiftPattern": "2+2+2",
-      "shift": "",
-      "leave": "4 çalış 2 izin",
-      "meal": "PROJEDEN",
-      "transport": "3.298 TL",
-      "shuttle": false,
-      "lodging": "",
-      "address": "Esenkent, Esenyurt",
-      "district": "Esenyurt",
-      "location": "Esenkent",
-      "lat": 41.0563428,
-      "lng": 28.6717817,
-      "accessStopId": "mb_beylikduzu",
-      "mapsUrl": "https://maps.app.goo.gl/XADXdAk2U1esRMrG9",
-      "salary": "42.241 TL",
-      "payType": "Brüt maaş",
-      "age": 30,
-      "gender": "Erkek",
-      "note": "42.241 TL + 3298 TL + Yemek",
-      "operation": "MESUT KURT",
-      "hr": "ŞAHİN KOÇALİ",
-      "referral": "Projeye yönlendirilecek",
-      "capacity": null,
-      "urgent": false,
-      "active": true
-    },
-    {
-      "id": "proj_mengenler",
-      "name": "Mengenler",
-      "sector": "Güvenlik",
-      "position": "",
-      "armed": "",
-      "duty": "",
-      "shiftPattern": "2+2+2",
-      "shift": "",
-      "leave": "4 çalış 2 izin",
-      "meal": "5500 MULTİNET",
-      "transport": "",
-      "shuttle": false,
-      "lodging": "",
-      "address": "Etiler, Beşiktaş",
-      "district": "Beşiktaş",
-      "location": "Etiler",
-      "lat": 41.0814212,
-      "lng": 29.0345988,
-      "accessStopId": "stop_levent",
-      "mapsUrl": "https://maps.app.goo.gl/rLNLZUtkAzVjKBaU7",
-      "salary": "42.000 TL",
-      "payType": "Net maaş",
-      "age": 45,
-      "gender": "Erkek",
-      "note": "2+2+2 42.000 TL Net (vergi kesintisi yoktur.) + 5500 TL Multinet",
-      "operation": "MESUT KURT",
-      "hr": "ŞAHİN KOÇALİ",
-      "referral": "",
-      "capacity": null,
-      "urgent": false,
-      "active": true
-    },
-    {
-      "id": "proj_ortakoy_republika",
-      "name": "Ortaköy Republika",
-      "sector": "Güvenlik",
-      "position": "",
-      "armed": "",
-      "duty": "",
-      "shiftPattern": "2+2+2",
-      "shift": "",
-      "leave": "4 çalış 2 izin",
-      "meal": "PROJEDEN",
-      "transport": "3.628 TL",
-      "shuttle": false,
-      "lodging": "",
-      "address": "Balmumcu, Beşiktaş",
-      "district": "Beşiktaş",
-      "location": "Balmumcu",
-      "lat": 41.0542874,
-      "lng": 29.0206898,
-      "accessStopId": "stop_yildiz",
-      "mapsUrl": "https://maps.app.goo.gl/UPxqsa52jPkjuKXY9",
-      "salary": "44.000 TL",
-      "payType": "Net maaş",
-      "age": 35,
-      "gender": "Erkek",
-      "note": "44.000 TL NET MAAŞ 3628 TL YOL PROJEDEN YEMEK",
-      "operation": "SELİM BAYRAM",
-      "hr": "BURCU BAYRAK",
-      "referral": "Projeye yönlendirilecek",
-      "capacity": null,
-      "urgent": false,
-      "active": true
-    }
-  ],
+const ANKARA_DATA = {
   "districts": [
     {
       "id": "besiktas",
@@ -814,1521 +479,1566 @@ const ISTANBUL_AVRUPA_DATA = {
       ]
     }
   ],
+  "urgentProjectIds": [],
+  "projects": [
+    {
+      "id": "proj_torium",
+      "name": "Torium",
+      "sector": "Güvenlik",
+      "position": "",
+      "address": "Haramidere, Beylikdüzü",
+      "lat": 41.0041831,
+      "lng": 28.6878147,
+      "accessStopId": "mb_haramidere",
+      "shift": "2+2+2 · 4 çalış 2 izin",
+      "salary": "40.000 TL Brüt maaş",
+      "meal": "PROJEDEN + 5000 TL MULTİNER",
+      "transport": "-",
+      "referral": "Projeye yönlendirilecek · İK ANIL YOGURTÇU · Op. SADİR SELÇUK ERKAN · KÜÇÜKÇEKMECE LOJMAN · Yaş ≤ 35 · 40.000 TL MAAŞ 5000 TL MULTİNET 2+2+2",
+      "gender": "Erkek",
+      "urgent": false,
+      "active": true
+    },
+    {
+      "id": "proj_mall_of_avm",
+      "name": "Mall of AVM",
+      "sector": "Güvenlik",
+      "position": "",
+      "address": "İkitelli, Başakşehir",
+      "lat": 41.0625272,
+      "lng": 28.8075256,
+      "accessStopId": "stop_masko",
+      "shift": "2+2+2 · 4 çalış 2 izin",
+      "salary": "40.000 TL Brüt maaş",
+      "meal": "PROJEDEN + 5000 TL MULTİNER",
+      "transport": "-",
+      "referral": "Projeye yönlendirilecek · İK ANIL YOGURTÇU · Op. OKTAY AHMET KARAKAYA · KÜÇÜKÇEKMECE LOJMAN · Yaş ≤ 35 · 40.000 TL MAAŞ 5000 TL MULTİNET 2+2+2",
+      "gender": "Erkek",
+      "urgent": false,
+      "active": true
+    },
+    {
+      "id": "proj_medipol",
+      "name": "Medipol Hastanesi",
+      "sector": "Güvenlik",
+      "position": "",
+      "address": "Yenibosna, Bahçelievler",
+      "lat": 40.9983995,
+      "lng": 28.8304931,
+      "accessStopId": "mb_yenibosna",
+      "shift": "2+2+2 · 4 çalış 2 izin",
+      "salary": "35.872 TL Brüt maaş",
+      "meal": "PROJEDEN + 5000 TL MULTİNER",
+      "transport": "3.628 TL",
+      "referral": "Projeye yönlendirilecek · İK BURCU BAYRAK · Op. ZEKERİYA GÜNEY · KÜÇÜKÇEKMECE LOJMAN · Yaş ≤ 35 · 39500 TL MAAŞ PROJEDEN YEMEK 2+2+2",
+      "gender": "Erkek",
+      "urgent": false,
+      "active": true
+    },
+    {
+      "id": "proj_eti_dpo",
+      "name": "Eti DPO",
+      "sector": "Güvenlik",
+      "position": "",
+      "address": "Akçaburgaz, Esenyurt",
+      "lat": 41.0792312,
+      "lng": 28.6354638,
+      "accessStopId": "bus_akcaburgaz_eti",
+      "shift": "2+2+2 · 4 çalış 2 izin",
+      "salary": "45.372 TL Brüt maaş",
+      "meal": "11.000 TL NAKİT YEMEK",
+      "transport": "3.628 TL",
+      "referral": "Projeye yönlendirilecek · İK BURCU BAYRAK · Op. SELİM BAYRAM · Yaş ≤ 30 · 60000 TL HERŞEY DAHİL 2+2+2",
+      "gender": "Erkek",
+      "urgent": false,
+      "active": true
+    },
+    {
+      "id": "proj_liv_hospital",
+      "name": "Liv Hospital",
+      "sector": "Güvenlik",
+      "position": "",
+      "address": "Esenkent, Esenyurt",
+      "lat": 41.0563428,
+      "lng": 28.6717817,
+      "accessStopId": "bus_142_kirac",
+      "shift": "2+2+2 · 4 çalış 2 izin",
+      "salary": "42.241 TL Brüt maaş",
+      "meal": "PROJEDEN",
+      "transport": "3.298 TL",
+      "referral": "Projeye yönlendirilecek · İK ŞAHİN KOÇALİ · Op. MESUT KURT · Yaş ≤ 30 · 42.241 TL + 3298 TL + Yemek",
+      "gender": "Erkek",
+      "urgent": false,
+      "active": true
+    },
+    {
+      "id": "proj_mengenler",
+      "name": "Mengenler",
+      "sector": "Güvenlik",
+      "position": "",
+      "address": "Etiler, Beşiktaş",
+      "lat": 41.0814212,
+      "lng": 29.0345988,
+      "accessStopId": "stop_levent",
+      "shift": "2+2+2 · 4 çalış 2 izin",
+      "salary": "42.000 TL Net maaş",
+      "meal": "5500 MULTİNET",
+      "transport": "-",
+      "referral": "İK ŞAHİN KOÇALİ · Op. MESUT KURT · Yaş ≤ 45 · 2+2+2 42.000 TL Net (vergi kesintisi yoktur.) + 5500 TL Multinet",
+      "gender": "Erkek",
+      "urgent": false,
+      "active": true
+    },
+    {
+      "id": "proj_ortakoy_republika",
+      "name": "Ortaköy Republika",
+      "sector": "Güvenlik",
+      "position": "",
+      "address": "Balmumcu, Beşiktaş",
+      "lat": 41.0542874,
+      "lng": 29.0206898,
+      "accessStopId": "stop_yildiz",
+      "shift": "2+2+2 · 4 çalış 2 izin",
+      "salary": "44.000 TL Net maaş",
+      "meal": "PROJEDEN",
+      "transport": "3.628 TL",
+      "referral": "Projeye yönlendirilecek · İK BURCU BAYRAK · Op. SELİM BAYRAM · Yaş ≤ 35 · 44.000 TL NET MAAŞ 3628 TL YOL PROJEDEN YEMEK",
+      "gender": "Erkek",
+      "urgent": false,
+      "active": true
+    }
+  ],
   "transitStops": [
     {
       "id": "stop_kabatas",
       "name": "Kabataş",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.0344774,
-      "lng": 28.9926707,
-      "coordSource": "osm"
+      "lng": 28.9926707
     },
     {
       "id": "stop_findikli_msu",
       "name": "Fındıklı - MSÜ",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0315308,
-      "lng": 28.9894567,
-      "coordSource": "osm"
+      "lng": 28.9894567
     },
     {
       "id": "stop_tophane",
       "name": "Tophane",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0268005,
-      "lng": 28.9802781,
-      "coordSource": "osm"
+      "lng": 28.9802781
     },
     {
       "id": "stop_karakoy",
       "name": "Karaköy",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.0222299,
-      "lng": 28.9747557,
-      "coordSource": "osm"
+      "lng": 28.9747557
     },
     {
       "id": "stop_eminonu",
       "name": "Eminönü",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.0174499,
-      "lng": 28.9732148,
-      "coordSource": "osm"
+      "lng": 28.9732148
     },
     {
       "id": "stop_sirkeci",
       "name": "Sirkeci",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.0151642,
-      "lng": 28.9758304,
-      "coordSource": "osm"
+      "lng": 28.9758304
     },
     {
       "id": "stop_gulhane",
       "name": "Gülhane",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0121632,
-      "lng": 28.9784087,
-      "coordSource": "osm"
+      "lng": 28.9784087
     },
     {
       "id": "stop_sultanahmet",
       "name": "Sultanahmet",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0081113,
-      "lng": 28.9755143,
-      "coordSource": "osm"
+      "lng": 28.9755143
     },
     {
       "id": "stop_cemberlitas",
       "name": "Çemberlitaş",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0084652,
-      "lng": 28.9711451,
-      "coordSource": "osm"
+      "lng": 28.9711451
     },
     {
       "id": "stop_beyazit_kapali_carsi",
       "name": "Beyazıt - Kapalı Çarşı",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0090852,
-      "lng": 28.9666458,
-      "coordSource": "osm"
+      "lng": 28.9666458
     },
     {
       "id": "stop_aksaray",
       "name": "Aksaray",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.0096115,
-      "lng": 28.9538781,
-      "coordSource": "osm"
+      "lng": 28.9538781
     },
     {
       "id": "stop_yusufpasa",
       "name": "Yusufpaşa",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0100961,
-      "lng": 28.9466545,
-      "coordSource": "osm"
+      "lng": 28.9466545
     },
     {
       "id": "stop_haseki",
       "name": "Haseki",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0110406,
-      "lng": 28.9431092,
-      "coordSource": "osm"
+      "lng": 28.9431092
     },
     {
       "id": "stop_findikzade",
       "name": "Fındıkzade",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0118214,
-      "lng": 28.9404859,
-      "coordSource": "osm"
+      "lng": 28.9404859
     },
     {
       "id": "stop_capa_sehremini",
       "name": "Çapa-Şehremini",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.015279,
-      "lng": 28.9333351,
-      "coordSource": "osm"
+      "lng": 28.9333351
     },
     {
       "id": "stop_pazartekke",
       "name": "Pazartekke",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0182396,
-      "lng": 28.9271904,
-      "coordSource": "osm"
+      "lng": 28.9271904
     },
     {
       "id": "stop_topkapi",
       "name": "Topkapı",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.0192853,
-      "lng": 28.9194457,
-      "coordSource": "osm"
+      "lng": 28.9194457
     },
     {
       "id": "stop_cevizlibag_a_o_y",
       "name": "Cevizlibağ-A.Ö.Y.",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0160557,
-      "lng": 28.9115859,
-      "coordSource": "osm"
+      "lng": 28.9115859
     },
     {
       "id": "stop_merkez_efendi",
       "name": "Merkez Efendi",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0103501,
-      "lng": 28.9094588,
-      "coordSource": "osm"
+      "lng": 28.9094588
     },
     {
       "id": "stop_seyitnizam_aksemsettin",
       "name": "Seyitnizam-Akşemsettin",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0042355,
-      "lng": 28.9073596,
-      "coordSource": "osm"
+      "lng": 28.9073596
     },
     {
       "id": "stop_mithatpasa",
       "name": "Mithatpaşa",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.003385,
-      "lng": 28.8998873,
-      "coordSource": "osm"
+      "lng": 28.8998873
     },
     {
       "id": "stop_mehmet_akif",
       "name": "Mehmet Akif",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0058363,
-      "lng": 28.8816928,
-      "coordSource": "osm"
+      "lng": 28.8816928
     },
     {
       "id": "stop_merter_tekstil_merkezi",
       "name": "Merter Tekstil Merkezi",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0115728,
-      "lng": 28.8807848,
-      "coordSource": "osm"
+      "lng": 28.8807848
     },
     {
       "id": "stop_gungoren",
       "name": "Güngören",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0152632,
-      "lng": 28.877486,
-      "coordSource": "osm"
+      "lng": 28.877486
     },
     {
       "id": "stop_akincilar",
       "name": "Akıncılar",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0171401,
-      "lng": 28.8714699,
-      "coordSource": "osm"
+      "lng": 28.8714699
     },
     {
       "id": "stop_soganli",
       "name": "Soğanlı",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0205923,
-      "lng": 28.8676168,
-      "coordSource": "osm"
+      "lng": 28.8676168
     },
     {
       "id": "stop_gunestepe",
       "name": "Güneştepe",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.028958,
-      "lng": 28.8610215,
-      "coordSource": "osm"
+      "lng": 28.8610215
     },
     {
       "id": "stop_yavuz_selim",
       "name": "Yavuz Selim",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0235482,
-      "lng": 28.8640724,
-      "coordSource": "osm"
+      "lng": 28.8640724
     },
     {
       "id": "stop_zeytinburnu",
       "name": "Zeytinburnu",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.0015333,
-      "lng": 28.8901578,
-      "coordSource": "osm"
+      "lng": 28.8901578
     },
     {
       "id": "stop_bagcilar",
       "name": "Bağcılar",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0322093,
-      "lng": 28.8606194,
-      "coordSource": "osm"
+      "lng": 28.8606194
     },
     {
       "id": "stop_yenikapi",
       "name": "Yenikapı",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.005728,
-      "lng": 28.9505658,
-      "coordSource": "osm"
+      "lng": 28.9505658
     },
     {
       "id": "stop_emniyet_fatih",
       "name": "Emniyet - Fatih",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.0174301,
-      "lng": 28.9396317,
-      "coordSource": "osm"
+      "lng": 28.9396317
     },
     {
       "id": "stop_topkapi_ulubatli",
       "name": "Topkapı Ulubatlı",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.0238758,
-      "lng": 28.9306248,
-      "coordSource": "osm"
+      "lng": 28.9306248
     },
     {
       "id": "stop_bayrampasa_maltepe",
       "name": "Bayrampaşa-Maltepe",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.0341161,
-      "lng": 28.9203244,
-      "coordSource": "osm"
+      "lng": 28.9203244
     },
     {
       "id": "stop_sagmalcilar",
       "name": "Sağmalcılar",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.040912,
-      "lng": 28.9072258,
-      "coordSource": "osm"
+      "lng": 28.9072258
     },
     {
       "id": "stop_kocatepe",
       "name": "Kocatepe",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.0485107,
-      "lng": 28.8954577,
-      "coordSource": "osm"
+      "lng": 28.8954577
     },
     {
       "id": "stop_otogar",
       "name": "Otogar",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.0401083,
-      "lng": 28.8946163,
-      "coordSource": "osm"
+      "lng": 28.8946163
     },
     {
       "id": "stop_terazidere",
       "name": "Terazidere",
       "mode": "metro",
       "lat": 41.0303612,
-      "lng": 28.897936,
-      "coordSource": "osm"
+      "lng": 28.897936
     },
     {
       "id": "stop_davutpasa_ytu",
       "name": "Davutpaşa - YTÜ",
       "mode": "metro",
       "lat": 41.0205272,
-      "lng": 28.900245,
-      "coordSource": "osm"
+      "lng": 28.900245
     },
     {
       "id": "stop_merter",
       "name": "Merter",
       "mode": "metro",
       "lat": 41.0076182,
-      "lng": 28.8961612,
-      "coordSource": "osm"
+      "lng": 28.8961612
     },
     {
       "id": "stop_bakirkoy_incirli",
       "name": "Bakırköy-İncirli",
       "mode": "metro",
       "lat": 40.9966391,
-      "lng": 28.8753909,
-      "coordSource": "osm"
+      "lng": 28.8753909
     },
     {
       "id": "stop_bahcelievler",
       "name": "Bahçelievler",
       "mode": "metro",
       "lat": 40.9955091,
-      "lng": 28.8632993,
-      "coordSource": "osm"
+      "lng": 28.8632993
     },
     {
       "id": "stop_atakoy_sirinevler",
       "name": "Ataköy-Şirinevler",
       "mode": "metro",
       "lat": 40.9913766,
-      "lng": 28.8460141,
-      "coordSource": "osm"
+      "lng": 28.8460141
     },
     {
       "id": "stop_yenibosna",
       "name": "Yenibosna",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 40.9894444,
-      "lng": 28.8367394,
-      "coordSource": "osm"
+      "lng": 28.8367394
     },
     {
       "id": "stop_dtm_istanbul_fuar_merkezi",
       "name": "DTM-İstanbul Fuar Merkezi",
       "mode": "metro",
       "lat": 40.9866459,
-      "lng": 28.8284451,
-      "coordSource": "osm"
+      "lng": 28.8284451
     },
     {
       "id": "stop_ataturk_havalimani",
       "name": "Atatürk Havalimanı",
       "mode": "metro",
       "lat": 40.9797389,
-      "lng": 28.8210402,
-      "coordSource": "osm"
+      "lng": 28.8210402
     },
     {
       "id": "stop_esenler",
       "name": "Esenler",
       "mode": "metro",
       "lat": 41.0375458,
-      "lng": 28.8885667,
-      "coordSource": "osm"
+      "lng": 28.8885667
     },
     {
       "id": "stop_menderes",
       "name": "Menderes",
       "mode": "metro",
       "lat": 41.0428043,
-      "lng": 28.8784472,
-      "coordSource": "osm"
+      "lng": 28.8784472
     },
     {
       "id": "stop_ucyuzlu",
       "name": "Üçyüzlü",
       "mode": "metro",
       "lat": 41.036756,
-      "lng": 28.8706206,
-      "coordSource": "osm"
+      "lng": 28.8706206
     },
     {
       "id": "stop_bagcilar_meydan",
       "name": "Bağcılar Meydan",
       "mode": "metro",
       "lat": 41.034741,
-      "lng": 28.8566453,
-      "coordSource": "osm"
+      "lng": 28.8566453
     },
     {
       "id": "stop_kirazli",
       "name": "Kirazlı",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.0318577,
-      "lng": 28.8421605,
-      "coordSource": "osm"
+      "lng": 28.8421605
     },
     {
       "id": "stop_kazlicesme",
       "name": "Kazlıçeşme",
-      "mode": "marmaray",
+      "mode": "tren",
       "lat": 40.9927446,
-      "lng": 28.9169682,
-      "coordSource": "osm"
+      "lng": 28.9169682
     },
     {
       "id": "stop_zeytinburnu_fisekhane",
       "name": "Zeytinburnu-Fişekhane",
-      "mode": "marmaray",
+      "mode": "tren",
       "lat": 40.9859358,
-      "lng": 28.9053777,
-      "coordSource": "osm"
+      "lng": 28.9053777
     },
     {
       "id": "stop_yeni_mahalle",
       "name": "Yeni Mahalle",
-      "mode": "marmaray",
+      "mode": "tren",
       "lat": 40.9818034,
-      "lng": 28.8810217,
-      "coordSource": "osm"
+      "lng": 28.8810217
     },
     {
       "id": "stop_bakirkoy",
       "name": "Bakırköy",
-      "mode": "marmaray",
+      "mode": "tren",
       "lat": 40.9804407,
-      "lng": 28.8724034,
-      "coordSource": "osm"
+      "lng": 28.8724034
     },
     {
       "id": "stop_atakoy",
       "name": "Ataköy",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 40.9802954,
-      "lng": 28.8562255,
-      "coordSource": "osm"
+      "lng": 28.8562255
     },
     {
       "id": "stop_yesilyurt",
       "name": "Yeşilyurt",
-      "mode": "marmaray",
+      "mode": "tren",
       "lat": 40.9655489,
-      "lng": 28.8372396,
-      "coordSource": "osm"
+      "lng": 28.8372396
     },
     {
       "id": "stop_yesilkoy",
       "name": "Yeşilköy",
-      "mode": "marmaray",
+      "mode": "tren",
       "lat": 40.9627331,
-      "lng": 28.8248804,
-      "coordSource": "osm"
+      "lng": 28.8248804
     },
     {
       "id": "stop_florya_akvaryum",
       "name": "Florya Akvaryum",
-      "mode": "marmaray",
+      "mode": "tren",
       "lat": 40.9678693,
-      "lng": 28.7970755,
-      "coordSource": "osm"
+      "lng": 28.7970755
     },
     {
       "id": "stop_florya",
       "name": "Florya",
-      "mode": "marmaray",
+      "mode": "tren",
       "lat": 40.9729697,
-      "lng": 28.7876456,
-      "coordSource": "osm"
+      "lng": 28.7876456
     },
     {
       "id": "stop_kucukcekmece",
       "name": "Küçükçekmece",
-      "mode": "marmaray",
+      "mode": "tren",
       "lat": 40.9885491,
-      "lng": 28.773056,
-      "coordSource": "osm"
+      "lng": 28.773056
     },
     {
       "id": "stop_mustafa_kemal",
       "name": "Mustafa Kemal",
-      "mode": "marmaray",
+      "mode": "tren",
       "lat": 41.0061388,
-      "lng": 28.7739784,
-      "coordSource": "osm"
+      "lng": 28.7739784
     },
     {
       "id": "stop_halkali",
       "name": "Halkalı",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.0184381,
-      "lng": 28.7668524,
-      "coordSource": "osm"
+      "lng": 28.7668524
     },
     {
       "id": "stop_bakirkoy_sahil",
       "name": "Bakırköy Sahil",
       "mode": "metro",
       "lat": 40.9735585,
-      "lng": 28.8679821,
-      "coordSource": "osm"
+      "lng": 28.8679821
     },
     {
       "id": "stop_ozgurluk_meydani",
       "name": "Özgürlük Meydanı",
       "mode": "metro",
       "lat": 40.9817899,
-      "lng": 28.8743051,
-      "coordSource": "osm"
+      "lng": 28.8743051
     },
     {
       "id": "stop_incirli",
       "name": "İncirli",
       "mode": "metro",
       "lat": 40.9976509,
-      "lng": 28.8753178,
-      "coordSource": "osm"
+      "lng": 28.8753178
     },
     {
       "id": "stop_haznedar",
       "name": "Haznedar",
       "mode": "metro",
       "lat": 41.0047045,
-      "lng": 28.8718966,
-      "coordSource": "osm"
+      "lng": 28.8718966
     },
     {
       "id": "stop_ilkyuva",
       "name": "İlkyuva",
       "mode": "metro",
       "lat": 41.0117328,
-      "lng": 28.8657307,
-      "coordSource": "osm"
+      "lng": 28.8657307
     },
     {
       "id": "stop_yildiztepe",
       "name": "Yıldıztepe",
       "mode": "metro",
       "lat": 41.019572,
-      "lng": 28.8578319,
-      "coordSource": "osm"
+      "lng": 28.8578319
     },
     {
       "id": "stop_molla_gurani",
       "name": "Molla Gürani",
       "mode": "metro",
       "lat": 41.0259558,
-      "lng": 28.8480788,
-      "coordSource": "osm"
+      "lng": 28.8480788
     },
     {
       "id": "stop_yeni_mahalle_2",
       "name": "Yeni Mahalle",
       "mode": "metro",
       "lat": 41.0404308,
-      "lng": 28.8361223,
-      "coordSource": "osm"
+      "lng": 28.8361223
     },
     {
       "id": "stop_mahmutbey",
       "name": "Mahmutbey",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.0548896,
-      "lng": 28.8306126,
-      "coordSource": "osm"
+      "lng": 28.8306126
     },
     {
       "id": "stop_istoc",
       "name": "İSTOÇ",
       "mode": "metro",
       "lat": 41.065077,
-      "lng": 28.8260847,
-      "coordSource": "osm"
+      "lng": 28.8260847
     },
     {
       "id": "stop_ikitelli_sanayi",
       "name": "İkitelli Sanayi",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.0713956,
-      "lng": 28.8038216,
-      "coordSource": "osm"
+      "lng": 28.8038216
     },
     {
       "id": "stop_turgut_ozal",
       "name": "Turgut Özal",
       "mode": "metro",
       "lat": 41.0811589,
-      "lng": 28.7976309,
-      "coordSource": "osm"
+      "lng": 28.7976309
     },
     {
       "id": "stop_siteler",
       "name": "Siteler",
       "mode": "metro",
       "lat": 41.0882794,
-      "lng": 28.7966542,
-      "coordSource": "osm"
+      "lng": 28.7966542
     },
     {
       "id": "stop_basak_konutlari",
       "name": "Başak Konutları",
       "mode": "metro",
       "lat": 41.0977803,
-      "lng": 28.7914561,
-      "coordSource": "osm"
+      "lng": 28.7914561
     },
     {
       "id": "stop_metrokent",
       "name": "Metrokent",
       "mode": "metro",
       "lat": 41.1082043,
-      "lng": 28.8016211,
-      "coordSource": "osm"
+      "lng": 28.8016211
     },
     {
       "id": "stop_onurkent",
       "name": "Onurkent",
       "mode": "metro",
       "lat": 41.1135424,
-      "lng": 28.7904668,
-      "coordSource": "osm"
+      "lng": 28.7904668
     },
     {
       "id": "stop_sehir_hastanesi",
       "name": "Şehir Hastanesi",
       "mode": "metro",
       "lat": 41.1032857,
-      "lng": 28.7775639,
-      "coordSource": "osm"
+      "lng": 28.7775639
     },
     {
       "id": "stop_toplu_konutlar",
       "name": "Toplu Konutlar",
       "mode": "metro",
       "lat": 41.1077392,
-      "lng": 28.768059,
-      "coordSource": "osm"
+      "lng": 28.768059
     },
     {
       "id": "stop_kayasehir_merkez",
       "name": "Kayaşehir Merkez",
       "mode": "metro",
       "lat": 41.1190274,
-      "lng": 28.7663849,
-      "coordSource": "osm"
+      "lng": 28.7663849
     },
     {
       "id": "stop_cobancesme",
       "name": "Çobançeşme",
       "mode": "metro",
       "lat": 40.9997593,
-      "lng": 28.822727,
-      "coordSource": "osm"
+      "lng": 28.822727
     },
     {
       "id": "stop_29_ekim_cumhuriyet",
       "name": "29 Ekim Cumhuriyet",
       "mode": "metro",
       "lat": 41.006234,
-      "lng": 28.8188131,
-      "coordSource": "osm"
+      "lng": 28.8188131
     },
     {
       "id": "stop_dogu_sanayi",
       "name": "Doğu Sanayi",
       "mode": "metro",
       "lat": 41.0149429,
-      "lng": 28.8181549,
-      "coordSource": "osm"
+      "lng": 28.8181549
     },
     {
       "id": "stop_mimar_sinan",
       "name": "Mimar Sinan",
       "mode": "metro",
       "lat": 41.0250791,
-      "lng": 28.8167821,
-      "coordSource": "osm"
+      "lng": 28.8167821
     },
     {
       "id": "stop_15_temmuz",
       "name": "15 Temmuz",
       "mode": "metro",
       "lat": 41.0369237,
-      "lng": 28.8142134,
-      "coordSource": "osm"
+      "lng": 28.8142134
     },
     {
       "id": "stop_halkali_caddesi",
       "name": "Halkalı Caddesi",
       "mode": "metro",
       "lat": 41.0451704,
-      "lng": 28.8066077,
-      "coordSource": "osm"
+      "lng": 28.8066077
     },
     {
       "id": "stop_ataturk_mahallesi",
       "name": "Atatürk Mahallesi",
       "mode": "metro",
       "lat": 41.0521866,
-      "lng": 28.7989581,
-      "coordSource": "osm"
+      "lng": 28.7989581
     },
     {
       "id": "stop_bahariye_2",
       "name": "Bahariye",
       "mode": "metro",
       "lat": 41.0585053,
-      "lng": 28.7994906,
-      "coordSource": "osm"
+      "lng": 28.7994906
     },
     {
       "id": "stop_masko",
       "name": "MASKO",
       "mode": "metro",
       "lat": 41.0639891,
-      "lng": 28.8042749,
-      "coordSource": "osm"
+      "lng": 28.8042749
     },
     {
       "id": "stop_ziya_gokalp",
       "name": "Ziya Gökalp",
       "mode": "metro",
       "lat": 41.0746891,
-      "lng": 28.786412,
-      "coordSource": "osm"
+      "lng": 28.786412
     },
     {
       "id": "stop_olimpiyat",
       "name": "Olimpiyat",
       "mode": "metro",
       "lat": 41.0796429,
-      "lng": 28.7670768,
-      "coordSource": "osm"
+      "lng": 28.7670768
     },
     {
       "id": "stop_mescid_i_selam",
       "name": "Mescid-i Selam",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.1162428,
-      "lng": 28.8511412,
-      "coordSource": "osm"
+      "lng": 28.8511412
     },
     {
       "id": "stop_cebeci",
       "name": "Cebeci",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.1124107,
-      "lng": 28.8575196,
-      "coordSource": "osm"
+      "lng": 28.8575196
     },
     {
       "id": "stop_yeni_mahalle_3",
       "name": "Yeni Mahalle",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.1002839,
-      "lng": 28.8628946,
-      "coordSource": "osm"
+      "lng": 28.8628946
     },
     {
       "id": "stop_haci_sukru",
       "name": "Hacı Şükrü",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0933385,
-      "lng": 28.8638623,
-      "coordSource": "osm"
+      "lng": 28.8638623
     },
     {
       "id": "stop_50_yil_bastabya",
       "name": "50. Yıl-Baştabya",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.087787,
-      "lng": 28.8669014,
-      "coordSource": "osm"
+      "lng": 28.8669014
     },
     {
       "id": "stop_cumhuriyet_mahallesi",
       "name": "Cumhuriyet Mahallesi",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0845661,
-      "lng": 28.8715664,
-      "coordSource": "osm"
+      "lng": 28.8715664
     },
     {
       "id": "stop_kiptas_venezia",
       "name": "KİPTAŞ Venezia",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0812918,
-      "lng": 28.8745733,
-      "coordSource": "osm"
+      "lng": 28.8745733
     },
     {
       "id": "stop_karadeniz",
       "name": "Karadeniz",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0751817,
-      "lng": 28.8824304,
-      "coordSource": "osm"
+      "lng": 28.8824304
     },
     {
       "id": "stop_taskopru",
       "name": "Taşköprü",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0725735,
-      "lng": 28.8877129,
-      "coordSource": "osm"
+      "lng": 28.8877129
     },
     {
       "id": "stop_ali_fuat_basgil",
       "name": "Ali Fuat Başgil",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0684467,
-      "lng": 28.8956044,
-      "coordSource": "osm"
+      "lng": 28.8956044
     },
     {
       "id": "stop_bosna_cukurcesme",
       "name": "Bosna-Çukurçeşme",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0618015,
-      "lng": 28.9020548,
-      "coordSource": "osm"
+      "lng": 28.9020548
     },
     {
       "id": "stop_uluyol_berec",
       "name": "Uluyol-Bereç",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0541152,
-      "lng": 28.9102178,
-      "coordSource": "osm"
+      "lng": 28.9102178
     },
     {
       "id": "stop_rami",
       "name": "Rami",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0465704,
-      "lng": 28.9155264,
-      "coordSource": "osm"
+      "lng": 28.9155264
     },
     {
       "id": "stop_topcular",
       "name": "Topçular",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0416106,
-      "lng": 28.9195261,
-      "coordSource": "osm"
+      "lng": 28.9195261
     },
     {
       "id": "stop_demirkapi",
       "name": "Demirkapı",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0369846,
-      "lng": 28.9233484,
-      "coordSource": "osm"
+      "lng": 28.9233484
     },
     {
       "id": "stop_sehitlik",
       "name": "Şehitlik",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0341412,
-      "lng": 28.9282944,
-      "coordSource": "osm"
+      "lng": 28.9282944
     },
     {
       "id": "stop_edirnekapi",
       "name": "Edirnekapı",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0313088,
-      "lng": 28.9340531,
-      "coordSource": "osm"
+      "lng": 28.9340531
     },
     {
       "id": "stop_vatan",
       "name": "Vatan",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0255685,
-      "lng": 28.9292392,
-      "coordSource": "osm"
+      "lng": 28.9292392
     },
     {
       "id": "stop_fetihkapi",
       "name": "Fetihkapı",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0215177,
-      "lng": 28.9249855,
-      "coordSource": "osm"
+      "lng": 28.9249855
     },
     {
       "id": "stop_haciosman",
       "name": "Hacıosman",
       "mode": "metro",
       "lat": 41.1398775,
-      "lng": 29.0303462,
-      "coordSource": "osm"
+      "lng": 29.0303462
     },
     {
       "id": "stop_darussafaka",
       "name": "Darüşşafaka",
       "mode": "metro",
       "lat": 41.1292867,
-      "lng": 29.0248677,
-      "coordSource": "osm"
+      "lng": 29.0248677
     },
     {
       "id": "stop_ataturk_oto_sanayi",
       "name": "Atatürk Oto Sanayi",
       "mode": "metro",
       "lat": 41.1181945,
-      "lng": 29.0239613,
-      "coordSource": "osm"
+      "lng": 29.0239613
     },
     {
       "id": "stop_itu_ayazaga",
       "name": "İTÜ-Ayazağa",
       "mode": "metro",
       "lat": 41.1082049,
-      "lng": 29.0209202,
-      "coordSource": "osm"
+      "lng": 29.0209202
     },
     {
       "id": "stop_sanayi",
       "name": "Sanayi",
       "mode": "metro",
       "lat": 41.0942446,
-      "lng": 29.0049849,
-      "coordSource": "osm"
+      "lng": 29.0049849
     },
     {
       "id": "stop_4_levent",
       "name": "4. Levent",
       "mode": "metro",
       "lat": 41.086047,
-      "lng": 29.0069725,
-      "coordSource": "osm"
+      "lng": 29.0069725
     },
     {
       "id": "stop_levent",
       "name": "Levent",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.0769862,
-      "lng": 29.0135732,
-      "coordSource": "osm"
+      "lng": 29.0135732
     },
     {
       "id": "stop_gayrettepe",
       "name": "Gayrettepe",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.0691324,
-      "lng": 29.0110477,
-      "coordSource": "osm"
+      "lng": 29.0110477
     },
     {
       "id": "stop_sisli",
       "name": "Şişli",
       "mode": "metro",
       "lat": 41.0646058,
-      "lng": 28.9926418,
-      "coordSource": "osm"
+      "lng": 28.9926418
     },
     {
       "id": "stop_osmanbey",
       "name": "Osmanbey",
       "mode": "metro",
       "lat": 41.0527563,
-      "lng": 28.9872434,
-      "coordSource": "osm"
+      "lng": 28.9872434
     },
     {
       "id": "stop_taksim",
       "name": "Taksim",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.0367798,
-      "lng": 28.9866658,
-      "coordSource": "osm"
+      "lng": 28.9866658
     },
     {
       "id": "stop_sishane",
       "name": "Şişhane",
       "mode": "metro",
       "lat": 41.0284104,
-      "lng": 28.9725882,
-      "coordSource": "osm"
+      "lng": 28.9725882
     },
     {
       "id": "stop_halic",
       "name": "Haliç",
       "mode": "metro",
       "lat": 41.0226507,
-      "lng": 28.9665946,
-      "coordSource": "osm"
+      "lng": 28.9665946
     },
     {
       "id": "stop_vezneciler",
       "name": "Vezneciler",
       "mode": "metro",
       "lat": 41.0122579,
-      "lng": 28.9595144,
-      "coordSource": "osm"
+      "lng": 28.9595144
     },
     {
       "id": "stop_yildiz",
       "name": "Yıldız",
       "mode": "metro",
       "lat": 41.0540063,
-      "lng": 29.0098445,
-      "coordSource": "osm"
+      "lng": 29.0098445
     },
     {
       "id": "stop_fulya",
       "name": "Fulya",
       "mode": "metro",
       "lat": 41.0620788,
-      "lng": 29.007826,
-      "coordSource": "osm"
+      "lng": 29.007826
     },
     {
       "id": "stop_mecidiyekoy",
       "name": "Mecidiyeköy",
       "mode": "metro",
       "lat": 41.0653135,
-      "lng": 28.9955607,
-      "coordSource": "osm"
+      "lng": 28.9955607
     },
     {
       "id": "stop_caglayan",
       "name": "Çağlayan",
       "mode": "metro",
       "lat": 41.0707989,
-      "lng": 28.9806277,
-      "coordSource": "osm"
+      "lng": 28.9806277
     },
     {
       "id": "stop_kagithane",
       "name": "Kağıthane",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.079665,
-      "lng": 28.9731572,
-      "coordSource": "osm"
+      "lng": 28.9731572
     },
     {
       "id": "stop_nurtepe",
       "name": "Nurtepe",
       "mode": "metro",
       "lat": 41.0799595,
-      "lng": 28.9632821,
-      "coordSource": "osm"
+      "lng": 28.9632821
     },
     {
       "id": "stop_alibeykoy",
       "name": "Alibeyköy",
       "mode": "metro",
       "lat": 41.0791653,
-      "lng": 28.9495879,
-      "coordSource": "osm"
+      "lng": 28.9495879
     },
     {
       "id": "stop_circir_mahallesi",
       "name": "Çırçır Mahallesi",
       "mode": "metro",
       "lat": 41.0802839,
-      "lng": 28.9361933,
-      "coordSource": "osm"
+      "lng": 28.9361933
     },
     {
       "id": "stop_veysel_karani_aksemsettin",
       "name": "Veysel Karani-Akşemsettin",
       "mode": "metro",
       "lat": 41.0797574,
-      "lng": 28.9281764,
-      "coordSource": "osm"
+      "lng": 28.9281764
     },
     {
       "id": "stop_yesilpinar",
       "name": "Yeşilpınar",
       "mode": "metro",
       "lat": 41.0824149,
-      "lng": 28.9183405,
-      "coordSource": "osm"
+      "lng": 28.9183405
     },
     {
       "id": "stop_k_zim_karabekir",
       "name": "Kâzım Karabekir",
       "mode": "metro",
       "lat": 41.0854613,
-      "lng": 28.9085465,
-      "coordSource": "osm"
+      "lng": 28.9085465
     },
     {
       "id": "stop_yenimahalle",
       "name": "Yenimahalle",
       "mode": "metro",
       "lat": 41.0839716,
-      "lng": 28.8928118,
-      "coordSource": "osm"
+      "lng": 28.8928118
     },
     {
       "id": "stop_karadeniz_mahallesi",
       "name": "Karadeniz Mahallesi",
       "mode": "metro",
       "lat": 41.0813391,
-      "lng": 28.8749302,
-      "coordSource": "osm"
+      "lng": 28.8749302
     },
     {
       "id": "stop_giyimkent_tekstilkent",
       "name": "Giyimkent-Tekstilkent",
       "mode": "metro",
       "lat": 41.0713794,
-      "lng": 28.8667234,
-      "coordSource": "osm"
+      "lng": 28.8667234
     },
     {
       "id": "stop_oruc_reis_yuzyil",
       "name": "Oruç Reis - Yüzyıl",
       "mode": "metro",
       "lat": 41.0628956,
-      "lng": 28.8552786,
-      "coordSource": "osm"
+      "lng": 28.8552786
     },
     {
       "id": "stop_goztepe_2",
       "name": "Göztepe",
       "mode": "metro",
       "lat": 41.0570155,
-      "lng": 28.8479518,
-      "coordSource": "osm"
+      "lng": 28.8479518
     },
     {
       "id": "stop_alibeykoy_cep_otogari",
       "name": "Alibeyköy Cep Otogarı",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0868716,
-      "lng": 28.9439324,
-      "coordSource": "osm"
+      "lng": 28.9439324
     },
     {
       "id": "stop_alibeykoy_metro",
       "name": "Alibeyköy Metro",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0784279,
-      "lng": 28.9494362,
-      "coordSource": "osm"
+      "lng": 28.9494362
     },
     {
       "id": "stop_alibeykoy_merkez",
       "name": "Alibeyköy Merkez",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0737108,
-      "lng": 28.945958,
-      "coordSource": "osm"
+      "lng": 28.945958
     },
     {
       "id": "stop_universite",
       "name": "Üniversite",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0699016,
-      "lng": 28.9428216,
-      "coordSource": "osm"
+      "lng": 28.9428216
     },
     {
       "id": "stop_silahtaraga_mahallesi",
       "name": "Silahtarağa Mahallesi",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0648566,
-      "lng": 28.9429308,
-      "coordSource": "osm"
+      "lng": 28.9429308
     },
     {
       "id": "stop_eyupsultan_devlet_hastanesi",
       "name": "Eyüpsultan Devlet Hastanesi",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.056762,
-      "lng": 28.9411459,
-      "coordSource": "osm"
+      "lng": 28.9411459
     },
     {
       "id": "stop_eyupsultan_teleferik",
       "name": "Eyüpsultan Teleferik",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0505614,
-      "lng": 28.9351644,
-      "coordSource": "osm"
+      "lng": 28.9351644
     },
     {
       "id": "stop_feshane",
       "name": "Feshane",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0455401,
-      "lng": 28.9378997,
-      "coordSource": "osm"
+      "lng": 28.9378997
     },
     {
       "id": "stop_ayvansaray",
       "name": "Ayvansaray",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0395444,
-      "lng": 28.9439399,
-      "coordSource": "osm"
+      "lng": 28.9439399
     },
     {
       "id": "stop_balat",
       "name": "Balat",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0340207,
-      "lng": 28.9480391,
-      "coordSource": "osm"
+      "lng": 28.9480391
     },
     {
       "id": "stop_fener",
       "name": "Fener",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0286148,
-      "lng": 28.9544538,
-      "coordSource": "osm"
+      "lng": 28.9544538
     },
     {
       "id": "stop_cibali",
       "name": "Cibali",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0242282,
-      "lng": 28.9602875,
-      "coordSource": "osm"
+      "lng": 28.9602875
     },
     {
       "id": "stop_kucukpazar",
       "name": "Küçükpazar",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "lat": 41.0209233,
-      "lng": 28.9632559,
-      "coordSource": "osm"
+      "lng": 28.9632559
     },
     {
       "id": "stop_halkali_stadi",
       "name": "Halkalı Stadı",
       "mode": "metro",
       "lat": 41.056569,
-      "lng": 28.7748859,
-      "coordSource": "osm"
+      "lng": 28.7748859
     },
     {
       "id": "stop_olimpiyatkoy",
       "name": "Olimpiyatköy",
       "mode": "metro",
       "lat": 41.0780764,
-      "lng": 28.7699116,
-      "coordSource": "osm"
+      "lng": 28.7699116
     },
     {
       "id": "stop_kayasehir",
       "name": "Kayaşehir",
       "mode": "metro",
       "lat": 41.1173262,
-      "lng": 28.7658803,
-      "coordSource": "osm"
+      "lng": 28.7658803
     },
     {
       "id": "stop_ibn_haldun_universitesi",
       "name": "İbn Haldun Üniversitesi",
       "mode": "metro",
       "lat": 41.1394663,
-      "lng": 28.793969,
-      "coordSource": "osm"
+      "lng": 28.793969
     },
     {
       "id": "stop_arnavutkoy_hastane",
       "name": "Arnavutköy Hastane",
       "mode": "metro",
       "lat": 41.1791198,
-      "lng": 28.74788,
-      "coordSource": "osm"
+      "lng": 28.74788
     },
     {
       "id": "stop_tasoluk",
       "name": "Taşoluk",
       "mode": "metro",
       "lat": 41.2070981,
-      "lng": 28.7160865,
-      "coordSource": "osm"
+      "lng": 28.7160865
     },
     {
       "id": "stop_kargo_terminali",
       "name": "Kargo Terminali",
       "mode": "metro",
       "lat": 41.2553423,
-      "lng": 28.712731,
-      "coordSource": "osm"
+      "lng": 28.712731
     },
     {
       "id": "stop_istanbul_havalimani",
       "name": "İstanbul Havalimanı",
       "mode": "metro",
       "lat": 41.2558497,
-      "lng": 28.7426107,
-      "coordSource": "osm"
+      "lng": 28.7426107
     },
     {
       "id": "stop_ihsaniye",
       "name": "İhsaniye",
       "mode": "metro",
       "lat": 41.2428514,
-      "lng": 28.8088272,
-      "coordSource": "osm"
+      "lng": 28.8088272
     },
     {
       "id": "stop_gokturk",
       "name": "Göktürk",
       "mode": "metro",
       "lat": 41.1768557,
-      "lng": 28.8836397,
-      "coordSource": "osm"
+      "lng": 28.8836397
     },
     {
       "id": "stop_kemerburgaz",
       "name": "Kemerburgaz",
       "mode": "metro",
       "lat": 41.1590973,
-      "lng": 28.9101084,
-      "coordSource": "osm"
+      "lng": 28.9101084
     },
     {
       "id": "stop_hasdal",
       "name": "Hasdal",
       "mode": "metro",
       "lat": 41.1212278,
-      "lng": 28.9467385,
-      "coordSource": "osm"
+      "lng": 28.9467385
     },
     {
       "id": "stop_seyrantepe",
       "name": "Seyrantepe",
-      "mode": "hub",
+      "mode": "otobus",
       "lat": 41.1012886,
-      "lng": 28.9957442,
-      "coordSource": "osm"
+      "lng": 28.9957442
     },
     {
       "id": "mb_beylikduzu",
       "name": "Beylikdüzü Son Durak",
+      "mode": "otobus",
       "lat": 41.0022,
-      "lng": 28.6398,
-      "mode": "metrobus",
-      "coordSource": "omurga-sablon"
+      "lng": 28.6398
     },
     {
       "id": "mb_beykent",
       "name": "Beykent",
+      "mode": "otobus",
       "lat": 40.9905,
-      "lng": 28.661,
-      "mode": "metrobus",
-      "coordSource": "omurga-sablon"
+      "lng": 28.661
     },
     {
       "id": "mb_haramidere",
       "name": "Haramidere",
+      "mode": "otobus",
       "lat": 40.99,
-      "lng": 28.69,
-      "mode": "metrobus",
-      "coordSource": "omurga-sablon"
+      "lng": 28.69
+    },
+    {
+      "id": "mb_sukrubey",
+      "name": "Şükrübey",
+      "mode": "otobus",
+      "lat": 40.9934,
+      "lng": 28.7442
+    },
+    {
+      "id": "mb_cennet",
+      "name": "Cennet",
+      "mode": "otobus",
+      "lat": 40.9989,
+      "lng": 28.7668
     },
     {
       "id": "mb_avcilar",
       "name": "Avcılar Merkez-Üniversite Kampüsü",
+      "mode": "otobus",
       "lat": 40.9878,
-      "lng": 28.7215,
-      "mode": "metrobus",
-      "coordSource": "omurga-sablon"
+      "lng": 28.7215
     },
     {
       "id": "mb_kucukcekmece",
       "name": "Küçükçekmece",
+      "mode": "otobus",
       "lat": 41.0045,
-      "lng": 28.7895,
-      "mode": "metrobus",
-      "coordSource": "omurga-sablon"
+      "lng": 28.7895
     },
     {
       "id": "mb_sefakoy",
       "name": "Sefaköy",
+      "mode": "otobus",
       "lat": 41.0018,
-      "lng": 28.8025,
-      "mode": "metrobus",
-      "coordSource": "omurga-sablon"
+      "lng": 28.8025
     },
     {
       "id": "mb_yenibosna",
       "name": "Yenibosna",
+      "mode": "otobus",
       "lat": 40.9968,
-      "lng": 28.8375,
-      "mode": "metrobus",
-      "coordSource": "omurga-sablon"
+      "lng": 28.8375
     },
     {
       "id": "mb_sirinevler",
       "name": "Şirinevler",
+      "mode": "otobus",
       "lat": 41.0022,
-      "lng": 28.8435,
-      "mode": "metrobus",
-      "coordSource": "omurga-sablon"
+      "lng": 28.8435
     },
     {
       "id": "mb_bahcelievler",
       "name": "Bahçelievler",
+      "mode": "otobus",
       "lat": 41.0024,
-      "lng": 28.8596,
-      "mode": "metrobus",
-      "coordSource": "omurga-sablon"
+      "lng": 28.8596
     },
     {
       "id": "mb_incirli",
       "name": "İncirli",
+      "mode": "otobus",
       "lat": 41.0065,
-      "lng": 28.8725,
-      "mode": "metrobus",
-      "coordSource": "omurga-sablon"
+      "lng": 28.8725
     },
     {
       "id": "mb_zeytinburnu",
       "name": "Zeytinburnu",
+      "mode": "otobus",
       "lat": 41.0088,
-      "lng": 28.8995,
-      "mode": "metrobus",
-      "coordSource": "omurga-sablon"
+      "lng": 28.8995
     },
     {
       "id": "mb_merter",
       "name": "Merter",
+      "mode": "otobus",
       "lat": 41.0122,
-      "lng": 28.8888,
-      "mode": "metrobus",
-      "coordSource": "omurga-sablon"
+      "lng": 28.8888
     },
     {
       "id": "mb_cevizlibag",
       "name": "Cevizlibağ",
+      "mode": "otobus",
       "lat": 41.0168,
-      "lng": 28.9105,
-      "mode": "metrobus",
-      "coordSource": "omurga-sablon"
+      "lng": 28.9105
     },
     {
       "id": "mb_topkapi",
       "name": "Topkapı",
+      "mode": "otobus",
       "lat": 41.0215,
-      "lng": 28.9188,
-      "mode": "metrobus",
-      "coordSource": "omurga-sablon"
+      "lng": 28.9188
     },
     {
       "id": "mb_edirnekapi",
       "name": "Edirnekapı",
+      "mode": "otobus",
       "lat": 41.0345,
-      "lng": 28.9395,
-      "mode": "metrobus",
-      "coordSource": "omurga-sablon"
+      "lng": 28.9395
     },
     {
       "id": "mb_halicioglu",
       "name": "Halıcıoğlu",
+      "mode": "otobus",
       "lat": 41.0502,
-      "lng": 28.9448,
-      "mode": "metrobus",
-      "coordSource": "omurga-sablon"
+      "lng": 28.9448
     },
     {
       "id": "mb_okmeydani",
       "name": "Okmeydanı",
+      "mode": "otobus",
       "lat": 41.0585,
-      "lng": 28.968,
-      "mode": "metrobus",
-      "coordSource": "omurga-sablon"
+      "lng": 28.968
     },
     {
       "id": "mb_caglayan",
       "name": "Çağlayan",
+      "mode": "otobus",
       "lat": 41.0702,
-      "lng": 28.9825,
-      "mode": "metrobus",
-      "coordSource": "omurga-sablon"
+      "lng": 28.9825
     },
     {
       "id": "mb_mecidiyekoy",
       "name": "Mecidiyeköy",
+      "mode": "otobus",
       "lat": 41.0665,
-      "lng": 28.9948,
-      "mode": "metrobus",
-      "coordSource": "omurga-sablon"
+      "lng": 28.9948
     },
     {
       "id": "mb_zincirlikuyu",
       "name": "Zincirlikuyu",
+      "mode": "otobus",
       "lat": 41.0672,
-      "lng": 29.0138,
-      "mode": "metrobus",
-      "coordSource": "omurga-sablon"
+      "lng": 29.0138
+    },
+    {
+      "id": "mb_15_temmuz",
+      "name": "15 Temmuz Şehitler Köprüsü",
+      "mode": "otobus",
+      "lat": 41.0452,
+      "lng": 29.0334
+    },
+    {
+      "id": "mb_burhaniye",
+      "name": "Burhaniye",
+      "mode": "otobus",
+      "lat": 41.0274,
+      "lng": 29.0472
+    },
+    {
+      "id": "mb_altunizade",
+      "name": "Altunizade",
+      "mode": "otobus",
+      "lat": 41.0219,
+      "lng": 29.0462
+    },
+    {
+      "id": "mb_acibadem",
+      "name": "Acıbadem",
+      "mode": "otobus",
+      "lat": 41.0022,
+      "lng": 29.0406
+    },
+    {
+      "id": "mb_uzuncayir",
+      "name": "Uzunçayır",
+      "mode": "otobus",
+      "lat": 40.9989,
+      "lng": 29.0498
+    },
+    {
+      "id": "mb_fikirtepe",
+      "name": "Fikirtepe",
+      "mode": "otobus",
+      "lat": 40.9932,
+      "lng": 29.0552
+    },
+    {
+      "id": "mb_sogutlucesme",
+      "name": "Söğütlüçeşme",
+      "mode": "otobus",
+      "lat": 40.99172,
+      "lng": 29.03781
+    },
+    {
+      "id": "bus_142_adnan_kahveci",
+      "name": "Adnan Kahveci",
+      "mode": "otobus",
+      "lat": 41.014,
+      "lng": 28.648
+    },
+    {
+      "id": "bus_142_esenyurt",
+      "name": "Esenyurt Merkez",
+      "mode": "otobus",
+      "lat": 41.0345,
+      "lng": 28.6785
+    },
+    {
+      "id": "bus_142_kirac",
+      "name": "Kıraç",
+      "mode": "otobus",
+      "lat": 41.055,
+      "lng": 28.65
+    },
+    {
+      "id": "bus_142_akcaburgaz",
+      "name": "Akçaburgaz",
+      "mode": "otobus",
+      "lat": 41.0733,
+      "lng": 28.6334
+    },
+    {
+      "id": "bus_akcaburgaz_eti",
+      "name": "Akçaburgaz Sanayi",
+      "mode": "otobus",
+      "lat": 41.0786,
+      "lng": 28.6362
+    },
+    {
+      "id": "bus_144_haramidere_kuzey",
+      "name": "Haramidere Kuzey",
+      "mode": "otobus",
+      "lat": 41.02,
+      "lng": 28.69
     }
   ],
   "transitLines": [
     {
       "id": "T1",
       "name": "T1: Kabataş → Bağcılar",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "verified": true,
-      "operator": "Metro İstanbul",
-      "hatNo": "T1",
       "source": "OpenStreetMap/Overpass omurga şablonu (ikmapsistanbulanadolu, 2026-09-07) — Avrupa yakası",
+      "hatNo": "T1",
       "stopIds": [
         "stop_kabatas",
         "stop_findikli_msu",
@@ -2360,17 +2070,15 @@ const ISTANBUL_AVRUPA_DATA = {
         "stop_yavuz_selim",
         "stop_zeytinburnu",
         "stop_bagcilar"
-      ],
-      "headwayMin": 5
+      ]
     },
     {
       "id": "M1A",
       "name": "M1A: Yenikapı → Atatürk Havalimanı",
       "mode": "metro",
       "verified": true,
-      "operator": "Metro İstanbul",
-      "hatNo": "M1A",
       "source": "OpenStreetMap/Overpass omurga şablonu (ikmapsistanbulanadolu, 2026-09-07) — Avrupa yakası",
+      "hatNo": "M1A",
       "stopIds": [
         "stop_yenikapi",
         "stop_aksaray",
@@ -2390,17 +2098,15 @@ const ISTANBUL_AVRUPA_DATA = {
         "stop_yenibosna",
         "stop_dtm_istanbul_fuar_merkezi",
         "stop_ataturk_havalimani"
-      ],
-      "headwayMin": 6
+      ]
     },
     {
       "id": "M1B",
       "name": "M1B: Yenikapı → Kirazlı",
       "mode": "metro",
       "verified": true,
-      "operator": "Metro İstanbul",
-      "hatNo": "M1B",
       "source": "OpenStreetMap/Overpass omurga şablonu (ikmapsistanbulanadolu, 2026-09-07) — Avrupa yakası",
+      "hatNo": "M1B",
       "stopIds": [
         "stop_yenikapi",
         "stop_aksaray",
@@ -2415,17 +2121,15 @@ const ISTANBUL_AVRUPA_DATA = {
         "stop_ucyuzlu",
         "stop_bagcilar_meydan",
         "stop_kirazli"
-      ],
-      "headwayMin": 6
+      ]
     },
     {
       "id": "B1",
       "name": "Marmaray: Sirkeci → Halkalı",
-      "mode": "marmaray",
+      "mode": "tren",
       "verified": true,
-      "operator": "TCDD Taşımacılık",
-      "hatNo": "Marmaray",
       "source": "OpenStreetMap/Overpass omurga şablonu (ikmapsistanbulanadolu, 2026-09-07) — Avrupa yakası",
+      "hatNo": "B1",
       "stopIds": [
         "stop_sirkeci",
         "stop_yenikapi",
@@ -2441,17 +2145,15 @@ const ISTANBUL_AVRUPA_DATA = {
         "stop_kucukcekmece",
         "stop_mustafa_kemal",
         "stop_halkali"
-      ],
-      "headwayMin": 10
+      ]
     },
     {
       "id": "M3",
       "name": "M3: Bakırköy Sahil → Kayaşehir Merkez",
       "mode": "metro",
       "verified": true,
-      "operator": "Metro İstanbul",
-      "hatNo": "M3",
       "source": "OpenStreetMap/Overpass omurga şablonu (ikmapsistanbulanadolu, 2026-09-07) — Avrupa yakası",
+      "hatNo": "M3",
       "stopIds": [
         "stop_bakirkoy_sahil",
         "stop_ozgurluk_meydani",
@@ -2473,17 +2175,15 @@ const ISTANBUL_AVRUPA_DATA = {
         "stop_sehir_hastanesi",
         "stop_toplu_konutlar",
         "stop_kayasehir_merkez"
-      ],
-      "headwayMin": 6
+      ]
     },
     {
       "id": "M9",
       "name": "M9: Ataköy → Olimpiyat",
       "mode": "metro",
       "verified": true,
-      "operator": "Metro İstanbul",
-      "hatNo": "M9",
       "source": "OpenStreetMap/Overpass omurga şablonu (ikmapsistanbulanadolu, 2026-09-07) — Avrupa yakası",
+      "hatNo": "M9",
       "stopIds": [
         "stop_atakoy",
         "stop_yenibosna",
@@ -2499,17 +2199,15 @@ const ISTANBUL_AVRUPA_DATA = {
         "stop_ikitelli_sanayi",
         "stop_ziya_gokalp",
         "stop_olimpiyat"
-      ],
-      "headwayMin": 6
+      ]
     },
     {
       "id": "T4",
       "name": "T4: Mescid-i Selam → Topkapı",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "verified": true,
-      "operator": "Metro İstanbul",
-      "hatNo": "T4",
       "source": "OpenStreetMap/Overpass omurga şablonu (ikmapsistanbulanadolu, 2026-09-07) — Avrupa yakası",
+      "hatNo": "T4",
       "stopIds": [
         "stop_mescid_i_selam",
         "stop_cebeci",
@@ -2532,17 +2230,15 @@ const ISTANBUL_AVRUPA_DATA = {
         "stop_vatan",
         "stop_fetihkapi",
         "stop_topkapi"
-      ],
-      "headwayMin": 5
+      ]
     },
     {
       "id": "M2",
       "name": "M2: Hacıosman → Yenikapı",
       "mode": "metro",
       "verified": true,
-      "operator": "Metro İstanbul",
-      "hatNo": "M2",
       "source": "OpenStreetMap/Overpass omurga şablonu (ikmapsistanbulanadolu, 2026-09-07) — Avrupa yakası",
+      "hatNo": "M2",
       "stopIds": [
         "stop_haciosman",
         "stop_darussafaka",
@@ -2559,17 +2255,15 @@ const ISTANBUL_AVRUPA_DATA = {
         "stop_halic",
         "stop_vezneciler",
         "stop_yenikapi"
-      ],
-      "headwayMin": 6
+      ]
     },
     {
       "id": "M7",
       "name": "M7: Yıldız → Mahmutbey",
       "mode": "metro",
       "verified": true,
-      "operator": "Metro İstanbul",
-      "hatNo": "M7",
       "source": "OpenStreetMap/Overpass omurga şablonu (ikmapsistanbulanadolu, 2026-09-07) — Avrupa yakası",
+      "hatNo": "M7",
       "stopIds": [
         "stop_yildiz",
         "stop_fulya",
@@ -2588,17 +2282,15 @@ const ISTANBUL_AVRUPA_DATA = {
         "stop_oruc_reis_yuzyil",
         "stop_goztepe_2",
         "stop_mahmutbey"
-      ],
-      "headwayMin": 6
+      ]
     },
     {
       "id": "T5",
       "name": "T5: Alibeyköy Cep Otogarı → Eminönü",
-      "mode": "tramvay",
+      "mode": "ankaray",
       "verified": true,
-      "operator": "Metro İstanbul",
-      "hatNo": "T5",
       "source": "OpenStreetMap/Overpass omurga şablonu (ikmapsistanbulanadolu, 2026-09-07) — Avrupa yakası",
+      "hatNo": "T5",
       "stopIds": [
         "stop_alibeykoy_cep_otogari",
         "stop_alibeykoy_metro",
@@ -2614,17 +2306,15 @@ const ISTANBUL_AVRUPA_DATA = {
         "stop_cibali",
         "stop_kucukpazar",
         "stop_eminonu"
-      ],
-      "headwayMin": 5
+      ]
     },
     {
       "id": "M11",
       "name": "M11: Halkalı → Gayrettepe",
       "mode": "metro",
       "verified": true,
-      "operator": "Metro İstanbul",
-      "hatNo": "M11",
       "source": "OpenStreetMap/Overpass omurga şablonu (ikmapsistanbulanadolu, 2026-09-07) — Avrupa yakası",
+      "hatNo": "M11",
       "stopIds": [
         "stop_halkali",
         "stop_halkali_stadi",
@@ -2641,37 +2331,34 @@ const ISTANBUL_AVRUPA_DATA = {
         "stop_hasdal",
         "stop_kagithane",
         "stop_gayrettepe"
-      ],
-      "headwayMin": 6
+      ]
     },
     {
       "id": "M2_SEYRANTEPE",
       "name": "M2 Seyrantepe kolu: Sanayi → Seyrantepe",
       "mode": "metro",
       "verified": true,
-      "operator": "Metro İstanbul",
-      "hatNo": "M2",
       "source": "M2 ana hattından ayrılan kol — Yenikapı ile sahte kenar kurulmasın diye ayrı modül",
+      "hatNo": "M2",
       "stopIds": [
         "stop_sanayi",
         "stop_seyrantepe"
-      ],
-      "headwayMin": 6
+      ]
     },
     {
       "id": "METROBUS",
-      "name": "Metrobüs: Beylikdüzü → Zincirlikuyu",
-      "mode": "metrobus",
+      "name": "Metrobüs: Beylikdüzü → Söğütlüçeşme",
+      "mode": "otobus",
       "verified": true,
-      "operator": "İETT",
+      "source": "İETT metrobüs omurgası Beylikdüzü–Söğütlüçeşme. Doğu uzantısı aktarma düğümüdür.",
       "hatNo": "34",
-      "headwayMin": 3,
-      "source": "İETT metrobüs Avrupa yakası omurgası — istasyon pinleri şablon koordinatıdır",
       "stopIds": [
         "mb_beylikduzu",
         "mb_beykent",
         "mb_haramidere",
         "mb_avcilar",
+        "mb_sukrubey",
+        "mb_cennet",
         "mb_kucukcekmece",
         "mb_sefakoy",
         "mb_yenibosna",
@@ -2687,109 +2374,88 @@ const ISTANBUL_AVRUPA_DATA = {
         "mb_okmeydani",
         "mb_caglayan",
         "mb_mecidiyekoy",
-        "mb_zincirlikuyu"
+        "mb_zincirlikuyu",
+        "mb_15_temmuz",
+        "mb_burhaniye",
+        "mb_altunizade",
+        "mb_acibadem",
+        "mb_uzuncayir",
+        "mb_fikirtepe",
+        "mb_sogutlucesme"
+      ]
+    },
+    {
+      "id": "IETT_142",
+      "name": "142: Beylikdüzü → Akçaburgaz",
+      "mode": "otobus",
+      "verified": true,
+      "source": "Esenyurt / Akçaburgaz beslemesi — metrobüs Beylikdüzü düğümüne bağlı",
+      "hatNo": "142",
+      "stopIds": [
+        "mb_beylikduzu",
+        "bus_142_adnan_kahveci",
+        "bus_142_esenyurt",
+        "bus_142_kirac",
+        "bus_142_akcaburgaz",
+        "bus_akcaburgaz_eti"
+      ]
+    },
+    {
+      "id": "IETT_142ES",
+      "name": "142ES: Beylikdüzü → Akçaburgaz",
+      "mode": "otobus",
+      "verified": true,
+      "source": "142 ekspres beslemesi — aynı uç düğümler, ara duraksız",
+      "hatNo": "142ES",
+      "stopIds": [
+        "mb_beylikduzu",
+        "bus_142_esenyurt",
+        "bus_142_akcaburgaz",
+        "bus_akcaburgaz_eti"
+      ]
+    },
+    {
+      "id": "IETT_144",
+      "name": "144: Haramidere → Akçaburgaz",
+      "mode": "otobus",
+      "verified": true,
+      "source": "Haramidere metrobüs düğümünden Akçaburgaz sanayiye besleme",
+      "hatNo": "144",
+      "stopIds": [
+        "mb_haramidere",
+        "bus_144_haramidere_kuzey",
+        "bus_142_esenyurt",
+        "bus_142_akcaburgaz",
+        "bus_akcaburgaz_eti"
       ]
     }
   ],
-  "walkLinks": [
-    {
-      "from": "mb_mecidiyekoy",
-      "to": "stop_mecidiyekoy",
-      "km": 0.147
-    },
-    {
-      "from": "mb_caglayan",
-      "to": "stop_caglayan",
-      "km": 0.17
-    },
-    {
-      "from": "mb_zincirlikuyu",
-      "to": "stop_gayrettepe",
-      "km": 0.315
-    },
-    {
-      "from": "mb_sirinevler",
-      "to": "stop_atakoy_sirinevler",
-      "km": 1.222
-    },
-    {
-      "from": "mb_yenibosna",
-      "to": "stop_yenibosna",
-      "km": 0.82
-    },
-    {
-      "from": "mb_bahcelievler",
-      "to": "stop_bahcelievler",
-      "km": 0.827
-    },
-    {
-      "from": "mb_incirli",
-      "to": "stop_incirli",
-      "km": 1.012
-    },
-    {
-      "from": "mb_incirli",
-      "to": "stop_bakirkoy_incirli",
-      "km": 1.123
-    },
-    {
-      "from": "mb_zeytinburnu",
-      "to": "stop_zeytinburnu",
-      "km": 1.126
-    },
-    {
-      "from": "mb_merter",
-      "to": "stop_merter",
-      "km": 0.801
-    },
-    {
-      "from": "mb_cevizlibag",
-      "to": "stop_cevizlibag_a_o_y",
-      "km": 0.123
-    },
-    {
-      "from": "mb_topkapi",
-      "to": "stop_topkapi",
-      "km": 0.252
-    },
-    {
-      "from": "mb_edirnekapi",
-      "to": "stop_edirnekapi",
-      "km": 0.578
-    },
-    {
-      "from": "stop_sisli",
-      "to": "stop_mecidiyekoy",
-      "km": 0.257
-    },
-    {
-      "from": "stop_alibeykoy",
-      "to": "stop_alibeykoy_metro",
-      "km": 0.083
-    }
-  ],
   "hubStopIds": [
-    "stop_yenikapi",
+    "bus_142_akcaburgaz",
+    "bus_142_esenyurt",
+    "bus_akcaburgaz_eti",
+    "mb_beylikduzu",
+    "mb_haramidere",
     "stop_aksaray",
-    "stop_taksim",
-    "stop_otogar",
-    "stop_kirazli",
-    "stop_mahmutbey",
-    "stop_gayrettepe",
-    "stop_levent",
-    "stop_mecidiyekoy",
-    "stop_kagithane",
-    "stop_halkali",
     "stop_atakoy",
-    "stop_zeytinburnu",
-    "stop_bakirkoy",
-    "mb_mecidiyekoy",
-    "mb_zincirlikuyu",
-    "mb_sirinevler",
-    "mb_avcilar",
-    "stop_topkapi",
+    "stop_bayrampasa_maltepe",
     "stop_eminonu",
+    "stop_emniyet_fatih",
+    "stop_gayrettepe",
+    "stop_halkali",
     "stop_ikitelli_sanayi",
-    "stop_yenibosna"
+    "stop_kagithane",
+    "stop_kirazli",
+    "stop_kocatepe",
+    "stop_mahmutbey",
+    "stop_otogar",
+    "stop_sagmalcilar",
+    "stop_sanayi",
+    "stop_sirkeci",
+    "stop_topkapi",
+    "stop_topkapi_ulubatli",
+    "stop_yenibosna",
+    "stop_yenikapi",
+    "stop_zeytinburnu"
   ]
 };
