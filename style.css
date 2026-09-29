@@ -78,21 +78,13 @@ html, body { height: 100%; margin: 0; }
 .empty-state { font-size: 13px; color: #94a3b8; }
 .sidebar-brand {
   margin-top: auto;
-  padding: 12px 22px 28px;
+  padding: 8px 18px 22px;
 }
-.tepe-mark {
-  font-family: Impact, "Arial Black", Haettenschweiler, sans-serif;
-  font-size: 54px;
-  line-height: 0.82;
-  letter-spacing: 0.06em;
-  color: #e10600;
-}
-.tepe-mark-sub {
-  margin-top: 7px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.42em;
-  color: #e10600;
+.tepe-logo {
+  display: block;
+  width: 210px;
+  height: auto;
+  max-width: 100%;
 }
 .workspace {
   flex: 1;
