@@ -6,7 +6,7 @@
  * projects[] bilinçli olarak boştur: şirket proje portföyü bu iskelete
  * sonradan işlenir. Kart alanları SECURITY_PROJECT_FIELDS ile tanımlıdır.
  *
- * Harita: merkez [41.05, 28.90], zoom 11.
+ * Harita: merkez [41.03, 28.85], zoom 10. Avrupa yakasının tamamı kadrajda kalır.
  *
  * Toplu taşıma omurgası (modüler hat listesi):
  *   M1A, M1B, M2 (+ Seyrantepe kolu), M3, M7, M9, M11,
@@ -79,10 +79,10 @@ function createSecurityProject(input) {
 const ISTANBUL_AVRUPA_DATA = {
   "map": {
     "center": [
-      41.05,
-      28.9
+      41.03,
+      28.85
     ],
-    "zoom": 11,
+    "zoom": 10,
     "label": "İstanbul Avrupa Yakası"
   },
   "urgentProjectIds": [],

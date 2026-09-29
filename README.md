@@ -10,11 +10,11 @@ npm start
 
 Uygulama `http://127.0.0.1:8820` adresinde açılır. Ankara projesi 8812 portunda kaldığı için bu iskelet 8820 kullanır. Python vekili için `npm run start:py`. Rota duman testi: `npm test`.
 
-Harita Leaflet ile **41.05, 28.90** merkezinde ve **zoom 11** ile açılır. Karolar OpenStreetMap’tendir.
+Harita Leaflet ile **41.03, 28.85** merkezinde ve **zoom 10** ile tüm Avrupa yakasını kapsayacak kadrajda açılır. Karolar OpenStreetMap’tendir.
 
-## Sol panel
+## Yerleşim
 
-25 Avrupa yakası ilçesi ve mahalle açılır listeleri aday çıkış noktasıdır. Süre ve pozisyon filtreleri (Silahlı Güvenlik, Silahsız Güvenlik, Danışma, Gözetim) sonuç listesini daraltır.
+Sol panelde başlık, aksiyon butonları, sekmeler, sonuç kartları ve TEPE Kurumsal logosu durur. İlçe/mahalle, adres arama, süre ve pozisyon filtreleri haritanın üstündeki yatay çubuktadır.
 
 ## Rota motoru
 

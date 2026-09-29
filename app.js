@@ -57,13 +57,18 @@ function escapeHtml(value) {
   }[ch]));
 }
 
-const mapView = DATA.map || { center: [41.05, 28.9], zoom: 11 };
+const mapView = DATA.map || { center: [41.03, 28.85], zoom: 10 };
 const map = L.map("map", { zoomControl: true }).setView(mapView.center, mapView.zoom);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19,
   attribution: "&copy; OpenStreetMap",
 }).addTo(map);
 L.control.scale({ metric: true, imperial: false, position: "bottomright" }).addTo(map);
+function frameEuropeanSide() {
+  map.invalidateSize();
+  map.setView(mapView.center, mapView.zoom, { animate: false });
+}
+window.addEventListener("load", frameEuropeanSide);
 
 const projectIcon = L.divIcon({ className: "", html: '<div class="pin pin-project"></div>', iconSize: [22, 22], iconAnchor: [11, 22] });
 const urgentProjectIcon = L.divIcon({ className: "", html: '<div class="pin pin-project pin-project-urgent"></div>', iconSize: [24, 24], iconAnchor: [12, 24] });
@@ -117,8 +122,7 @@ DATA.districts.forEach((district) => {
   marker.bindTooltip(district.name, { direction: "top" });
 });
 
-const districtSelect = document.getElementById("districtSelect");
-const neighborhoodSelect = document.getElementById("neighborhoodSelect");
+const originSelect = document.getElementById("originSelect");
 const projectSelect = document.getElementById("projectSelect");
 const originPanel = document.getElementById("panel-origin");
 const projectPanel = document.getElementById("panel-project");
@@ -133,39 +137,33 @@ const routeDetailVariantToggle = document.getElementById("routeDetailVariantTogg
 const addressInput = document.getElementById("addressInput");
 const addressStatus = document.getElementById("addressStatus");
 
-DATA.districts
-  .slice()
-  .sort((a, b) => a.name.localeCompare(b.name, "tr"))
-  .forEach((district) => {
-    const option = document.createElement("option");
-    option.value = district.id;
-    option.textContent = district.name;
-    districtSelect.appendChild(option);
-  });
-
-function fillNeighborhoods(districtId) {
-  neighborhoodSelect.innerHTML = "";
-  const district = DATA.districts.find((item) => item.id === districtId);
-  if (!district) {
-    neighborhoodSelect.disabled = true;
-    neighborhoodSelect.innerHTML = '<option value="">Önce ilçe seçin</option>';
-    return;
-  }
-  neighborhoodSelect.disabled = false;
-  const center = document.createElement("option");
-  center.value = district.id;
-  center.textContent = district.name + " (ilçe merkezi)";
-  neighborhoodSelect.appendChild(center);
-  (district.neighborhoods || [])
+function buildOriginSelect() {
+  const previous = originSelect.value;
+  originSelect.innerHTML = '<option value="">Seçiniz…</option>';
+  DATA.districts
     .slice()
     .sort((a, b) => a.name.localeCompare(b.name, "tr"))
-    .forEach((neighborhood) => {
-      const option = document.createElement("option");
-      option.value = neighborhood.id;
-      option.textContent = neighborhood.name;
-      neighborhoodSelect.appendChild(option);
+    .forEach((district) => {
+      const group = document.createElement("optgroup");
+      group.label = district.name;
+      const center = document.createElement("option");
+      center.value = district.id;
+      center.textContent = district.name + " (ilçe merkezi)";
+      group.appendChild(center);
+      (district.neighborhoods || [])
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name, "tr"))
+        .forEach((neighborhood) => {
+          const option = document.createElement("option");
+          option.value = neighborhood.id;
+          option.textContent = neighborhood.name;
+          group.appendChild(option);
+        });
+      originSelect.appendChild(group);
     });
+  if (previous) originSelect.value = previous;
 }
+buildOriginSelect();
 
 let customOrigin = null;
 function allOrigins() {
@@ -198,8 +196,7 @@ function projectById(id) {
   return DATA.projects.find((item) => item.id === id) || null;
 }
 function currentOriginId() {
-  if (customOrigin && neighborhoodSelect.value === customOrigin.id) return customOrigin.id;
-  return neighborhoodSelect.value || "";
+  return originSelect.value || "";
 }
 
 let currentMode = "origin-to-project";
@@ -209,7 +206,11 @@ let activeEstimate = null;
 let useFewestTransfers = false;
 
 function applyPositionFilter(projects) {
-  return currentPosition ? projects.filter((project) => project.position === currentPosition) : projects;
+  if (!currentPosition) return projects;
+  if (currentPosition === "Danışma/Gözetim") {
+    return projects.filter((project) => project.position === "Danışma" || project.position === "Gözetim");
+  }
+  return projects.filter((project) => project.position === currentPosition);
 }
 
 function durationBucket(min) {
@@ -546,13 +547,8 @@ document.querySelectorAll(".mode-btn[data-mode]").forEach((button) => {
   });
 });
 
-districtSelect.addEventListener("change", () => {
-  customOrigin = null;
-  fillNeighborhoods(districtSelect.value);
-  runSearch();
-});
-neighborhoodSelect.addEventListener("change", () => {
-  customOrigin = null;
+originSelect.addEventListener("change", () => {
+  if (!customOrigin || originSelect.value !== customOrigin.id) customOrigin = null;
   runSearch();
 });
 projectSelect.addEventListener("change", runSearch);
@@ -614,14 +610,16 @@ document.getElementById("addressSearchBtn").addEventListener("click", async () =
       return;
     }
     customOrigin = { id: "custom_" + hit.lat.toFixed(4) + "_" + hit.lng.toFixed(4), name: hit.label, lat: hit.lat, lng: hit.lng };
-    neighborhoodSelect.disabled = false;
     const option = document.createElement("option");
     option.value = customOrigin.id;
     option.textContent = hit.label;
-    neighborhoodSelect.appendChild(option);
-    neighborhoodSelect.value = customOrigin.id;
+    originSelect.appendChild(option);
+    originSelect.value = customOrigin.id;
     addressStatus.textContent = hit.label;
     currentMode = "origin-to-project";
+    document.querySelectorAll(".mode-btn[data-mode]").forEach((item) => {
+      item.classList.toggle("mode-btn-active", item.dataset.mode === "origin-to-project");
+    });
     originPanel.classList.remove("hidden");
     projectPanel.classList.add("hidden");
     runSearch();

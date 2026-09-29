@@ -20,7 +20,7 @@ const assert = (cond, message) => {
   if (!cond) throw new Error(message);
 };
 
-assert(data.map.center[0] === 41.05 && data.map.center[1] === 28.9 && data.map.zoom === 11, "harita merkezi");
+assert(data.map.center[0] === 41.03 && data.map.center[1] === 28.85 && data.map.zoom === 10, "harita merkezi");
 assert(data.projects.length === 0, "proje listesi boş olmalı");
 assert(data.districts.length === 25, "25 Avrupa ilçesi");
 ["Beşiktaş", "Şişli", "Beyoğlu", "Bakırköy", "Bahçelievler", "Esenyurt", "Başakşehir", "Sarıyer", "Küçükçekmece"].forEach((name) => {
