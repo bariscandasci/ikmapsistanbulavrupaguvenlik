@@ -139,6 +139,7 @@
   }
 
   function buildTransitGraph(network) {
+    if (typeof applyTransitGraphExtensions === "function") applyTransitGraphExtensions(network);
     const stopsById = new Map();
     const grid = new Map();
     (network.transitStops || []).forEach((s) => {
@@ -389,6 +390,17 @@
     };
   }
 
+  function geometryAlongLine(graph, lineId, fromId, toId) {
+    const line = graph.linesByLocalId.get(lineId);
+    const fallback = [fromId, toId].filter(Boolean);
+    if (!line || !line.stopIds) return fallback;
+    const ids = line.stopIds;
+    const fromIndex = ids.indexOf(fromId);
+    const toIndex = ids.indexOf(toId);
+    if (fromIndex < 0 || toIndex < 0) return fallback;
+    return fromIndex <= toIndex ? ids.slice(fromIndex, toIndex + 1) : ids.slice(toIndex, fromIndex + 1).reverse();
+  }
+
   function pathToSteps(pathStopIds, edgeAtStop, graph) {
     const rawEdges = [];
     for (let i = 1; i < pathStopIds.length; i++) {
@@ -411,6 +423,9 @@
     return merged.map((step) => {
       const fromStop = graph.stopsById.get(step.from);
       const toStop = graph.stopsById.get(step.to);
+      const geometryStopIds = step.lineId
+        ? geometryAlongLine(graph, step.lineId, step.from, step.to)
+        : [step.from, step.to];
       if (step.lineId) {
         const line = graph.linesByLocalId.get(step.lineId);
         return {
@@ -423,6 +438,7 @@
           lineId: step.lineId,
           fromStopId: step.from,
           toStopId: step.to,
+          geometryStopIds: geometryStopIds,
           fallbackWaitMin: line ? boardingWaitMin(lineHeadwayMin(line)) : boardingWaitMin(null),
         };
       }
@@ -436,6 +452,7 @@
         lineId: null,
         fromStopId: step.from,
         toStopId: step.to,
+        geometryStopIds: geometryStopIds,
       };
     });
   }

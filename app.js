@@ -408,33 +408,31 @@ function drawRoute(route, destLatLng) {
   routesLayer.clearLayers();
   if (!route) return;
   const graph = routing_engine.graph;
-  const latlngs = [];
-  (route.pathStopIds || []).forEach((id) => {
-    const stop = graph && graph.stopsById.get(id);
-    if (stop) latlngs.push([stop.lat, stop.lng]);
+  const bounds = [];
+  (route.steps || []).forEach((step) => {
+    const ids = step.geometryStopIds && step.geometryStopIds.length
+      ? step.geometryStopIds
+      : [step.fromStopId, step.toStopId].filter(Boolean);
+    const latlngs = ids
+      .map((id) => graph && graph.stopsById.get(id))
+      .filter(Boolean)
+      .map((stop) => [stop.lat, stop.lng]);
+    if (latlngs.length < 2) return;
+    L.polyline(latlngs, {
+      color: MODE_COLOR[step.mode] || "#4f46e5",
+      weight: 5,
+      opacity: 0.9,
+    }).addTo(routesLayer);
+    latlngs.forEach((point) => bounds.push(point));
   });
-  if (destLatLng) latlngs.push([destLatLng.lat, destLatLng.lng]);
-  if (latlngs.length >= 2) {
-    const line = L.polyline(latlngs, { color: "#4f46e5", weight: 5, opacity: 0.85 }).addTo(routesLayer);
-    map.fitBounds(line.getBounds().pad(0.2), { animate: true });
-  }
+  if (destLatLng) bounds.push([destLatLng.lat, destLatLng.lng]);
+  if (bounds.length >= 2) map.fitBounds(L.latLngBounds(bounds).pad(0.2), { animate: true });
   const snap = route.snappedStopId && graph && graph.stopsById.get(route.snappedStopId);
   if (snap) {
     L.circleMarker([snap.lat, snap.lng], { radius: 7, color: "#ea4335", weight: 2, fillOpacity: 0.9 })
       .bindTooltip("Hedef durak: " + snap.name, { direction: "top" })
       .addTo(routesLayer);
   }
-  (route.steps || []).forEach((step) => {
-    if (!step.lineId || !graph) return;
-    const from = graph.stopsById.get(step.fromStopId);
-    const to = graph.stopsById.get(step.toStopId);
-    if (!from || !to) return;
-    L.polyline([[from.lat, from.lng], [to.lat, to.lng]], {
-      color: MODE_COLOR[step.mode] || "#4f46e5",
-      weight: 4,
-      opacity: 0.35,
-    }).addTo(routesLayer);
-  });
 }
 
 function showRouteResult(row) {

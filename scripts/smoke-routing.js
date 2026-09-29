@@ -12,6 +12,7 @@ context.window = context;
 context.globalThis = context;
 vm.createContext(context);
 vm.runInContext(fs.readFileSync(path.join(root, "data.js"), "utf8"), context);
+vm.runInContext(fs.readFileSync(path.join(root, "transit_graph.js"), "utf8"), context);
 vm.runInContext(fs.readFileSync(path.join(root, "routing_engine.js"), "utf8"), context);
 
 const engine = vm.runInContext("routing_engine", context);
@@ -38,9 +39,11 @@ data.districts.forEach((district) => {
 });
 
 const lineIds = data.transitLines.map((line) => line.id);
-["M1A", "M1B", "M2", "M3", "M7", "M9", "M11", "T1", "T4", "T5", "B1", "METROBUS"].forEach((id) => {
+["M1A", "M1B", "M2", "M3", "M7", "M9", "M11", "T1", "T4", "T5", "B1", "METROBUS", "IETT_142", "IETT_142ES", "IETT_144"].forEach((id) => {
   assert(lineIds.includes(id), "hat eksik: " + id);
 });
+const metrobus = data.transitLines.find((line) => line.id === "METROBUS");
+assert(metrobus.stopIds[0] === "mb_beylikduzu" && metrobus.stopIds[metrobus.stopIds.length - 1] === "mb_sogutlucesme", "metrobüs Beylikdüzü–Söğütlüçeşme");
 
 const graph = engine.graph;
 const yenikapiEdges = graph.adjacency.get("stop_yenikapi") || [];
@@ -66,6 +69,30 @@ assert(route.snappedStopId, "hedef durak kilitlenmeli");
 assert(route.durationMin >= 5 && route.durationMin < 150, "süre makul: " + route.durationMin);
 assert(route.steps.some((step) => step.lineId), "en az bir hat adımı");
 assert(route.liveFallback === true, "canlı sefer öncesi yedek bayrağı");
+
+const bagcilarMerkez = data.districts.find((d) => d.id === "bagcilar").neighborhoods.find((n) => n.id === "bagcilar_merkez");
+const mall = data.projects.find((item) => item.id === "proj_mall_of_avm");
+const mallRoute = engine.plan(
+  { lat: bagcilarMerkez.lat, lng: bagcilarMerkez.lng, name: "Bağcılar Merkez" },
+  { lat: mall.lat, lng: mall.lng, name: mall.name },
+  { fixedSide: "origin" }
+);
+const m3Step = mallRoute.steps.find((step) => step.lineId === "M3");
+assert(m3Step && m3Step.geometryStopIds.length >= 5, "M3 ara istasyon zinciri");
+assert(m3Step.geometryStopIds[0] === "stop_kirazli" && m3Step.geometryStopIds[m3Step.geometryStopIds.length - 1] === "stop_ikitelli_sanayi", "M3 uç istasyonlar");
+["stop_yeni_mahalle_2", "stop_mahmutbey", "stop_istoc"].forEach((id) => {
+  assert(m3Step.geometryStopIds.indexOf(id) > 0, "M3 atlanan istasyon: " + id);
+});
+
+const eti = data.projects.find((item) => item.id === "proj_eti_dpo");
+const etiRoute = engine.plan(
+  { lat: bagcilarMerkez.lat, lng: bagcilarMerkez.lng, name: "Bağcılar Merkez" },
+  { lat: eti.lat, lng: eti.lng, name: eti.name },
+  { fixedSide: "origin" }
+);
+assert(etiRoute.verified === true, "Eti DPO omurgada doğrulanmalı: " + (etiRoute.steps || []).map((step) => step.line).join(" | "));
+assert(etiRoute.steps.some((step) => step.lineId === "METROBUS"), "Eti rotasında metrobüs");
+assert(etiRoute.steps.some((step) => step.hatNo === "142" || step.hatNo === "142ES" || step.hatNo === "144"), "Eti rotasında İETT beslemesi");
 
 const project = context.createSecurityProject({
   name: "Şema örneği",

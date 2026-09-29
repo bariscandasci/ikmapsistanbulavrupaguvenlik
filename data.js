@@ -12,9 +12,9 @@
  *   M1A, M1B, M2 (+ Seyrantepe kolu), M3, M7, M9, M11,
  *   T1, T4, T5, Marmaray (Sirkeci–Halkalı), İETT metrobüs (Beylikdüzü–Zincirlikuyu).
  * Raylı durak koordinatları ikmapsistanbulanadolu OSM/Overpass çıkışındandır
- * (2026-09-07). Metrobüs pinleri omurga şablonudur. İETT otobüs GTFS'i
- * bu iskelete dahil değildir; omurga dışındaki noktalar routing_engine
- * içinde "doğrulanamadı" yedeğine düşer.
+ * (2026-09-07). Metrobüs'ün Söğütlüçeşme uzantısı ve 142 / 142ES / 144
+ * beslemesi transit_graph.js içindedir. Çizim, biniş ile iniş arasındaki
+ * istasyonları zincirler.
  */
 
 const SECURITY_PROJECT_FIELDS = {
