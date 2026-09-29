@@ -21,7 +21,14 @@ const assert = (cond, message) => {
 };
 
 assert(data.map.center[0] === 41.03 && data.map.center[1] === 28.85 && data.map.zoom === 10, "harita merkezi");
-assert(data.projects.length === 0, "proje listesi boş olmalı");
+assert(data.projects.length === 7, "PROJE_KONUM kayıtları");
+["Torium", "Mall of AVM", "Medipol Hastanesi", "Eti DPO", "Liv Hospital", "Mengenler", "Ortaköy Republika"].forEach((name) => {
+  const project = data.projects.find((item) => item.name === name);
+  assert(project, "proje eksik: " + name);
+  assert(Number.isFinite(project.lat) && Number.isFinite(project.lng), name + " koordinat");
+  assert(project.lat > 40.9 && project.lat < 41.3 && project.lng > 28.4 && project.lng < 29.15, name + " Avrupa yakası");
+  assert(project.shiftPattern === "2+2+2", name + " vardiya");
+});
 assert(data.districts.length === 25, "25 Avrupa ilçesi");
 ["Beşiktaş", "Şişli", "Beyoğlu", "Bakırköy", "Bahçelievler", "Esenyurt", "Başakşehir", "Sarıyer", "Küçükçekmece"].forEach((name) => {
   assert(data.districts.some((d) => d.name === name), "ilçe eksik: " + name);
@@ -76,6 +83,8 @@ assert(project.armed === "silahli", "silahlı alan");
 assert(project.shiftPattern === "12/36", "vardiya");
 assert(project.shuttle === true, "servis");
 assert(project.duty === "gozetim", "görev");
+const torium = data.projects.find((item) => item.id === "proj_torium");
+assert(torium.armed === "" && torium.salary === "40.000 TL" && torium.accessStopId === "mb_haramidere", "torium tablodan");
 
 engine.withLiveFallback(route, {
   getLive() {

@@ -26,12 +26,19 @@ const MODE_COLOR = {
 };
 
 function loadStoredProjects() {
+  let raw = [];
   try {
-    const raw = JSON.parse(localStorage.getItem(PROJECT_CACHE_KEY) || "[]");
-    if (Array.isArray(raw)) raw.forEach((item) => DATA.projects.push(createSecurityProject(item)));
+    raw = JSON.parse(localStorage.getItem(PROJECT_CACHE_KEY) || "[]");
   } catch {
-    /* boş havuz */
+    raw = [];
   }
+  if (!Array.isArray(raw) || !raw.length) return;
+  raw.forEach((item) => {
+    const project = createSecurityProject(item);
+    const index = DATA.projects.findIndex((row) => row.id === project.id);
+    if (index >= 0) DATA.projects[index] = project;
+    else DATA.projects.push(project);
+  });
 }
 loadStoredProjects();
 
@@ -260,32 +267,102 @@ function rebuildProjectSelect() {
     .forEach((project) => {
       const option = document.createElement("option");
       option.value = project.id;
-      option.textContent = project.name + " — " + project.position;
+      option.textContent = project.position ? project.name + " — " + project.position : project.name;
       projectSelect.appendChild(option);
     });
   if (previous && projectById(previous) && !INACTIVE_PROJECT_IDS.has(previous)) projectSelect.value = previous;
 }
 rebuildProjectSelect();
 
+function renderCatalog() {
+  const projects = activeProjects().slice().sort((a, b) => a.name.localeCompare(b.name, "tr"));
+  resultsList.innerHTML = "";
+  resultsHeading.textContent = projects.length ? "Açık projeler (" + projects.length + ")" : "";
+  emptyState.classList.toggle("hidden", projects.length > 0);
+  emptyState.textContent = "Sonuçları görmek için yukarıdan bir seçim yapın.";
+  projects.forEach((project) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "result-card";
+    card.innerHTML = `
+      <div class="min-w-0">
+        <div class="font-semibold text-slate-800 truncate">${escapeHtml(project.name)}</div>
+        <div class="text-xs text-slate-500 truncate">${escapeHtml(projectSubtitle(project))}</div>
+      </div>
+      ${termsMarkup(securityTerms(project), project.referral)}`;
+    card.addEventListener("click", () => {
+      document.querySelectorAll(".result-card").forEach((item) => item.classList.remove("result-card-active"));
+      card.classList.add("result-card-active");
+      map.setView([project.lat, project.lng], 14, { animate: true });
+      const marker = projectMarkersById[project.id];
+      if (marker) marker.openTooltip();
+    });
+    resultsList.appendChild(card);
+  });
+}
+
 function clearResults() {
   resultsList.innerHTML = "";
   resultsHeading.textContent = "";
-  emptyState.classList.remove("hidden");
   routeDetail.classList.add("hidden");
   routesLayer.clearLayers();
   Object.values(districtMarkersById).forEach((marker) => markersLayer.removeLayer(marker));
   for (const key in districtMarkersById) delete districtMarkersById[key];
+  if (currentMode === "origin-to-project" && !currentOriginId()) {
+    renderCatalog();
+    return;
+  }
+  emptyState.classList.remove("hidden");
+  emptyState.textContent = "Sonuçları görmek için yukarıdan bir seçim yapın.";
+}
+
+function projectSubtitle(project) {
+  return project.address || [project.location, project.district].filter(Boolean).join(", ");
 }
 
 function securityTerms(project) {
+  const shift = [project.shiftPattern, project.shift, project.leave].filter(Boolean).join(" · ");
   return {
-    salary: project.salary || "—",
-    meal: project.meal || "—",
-    transport: project.shuttle ? "Servis" : (project.transport || "—"),
-    shift: (project.shiftPattern || "") + (project.shift ? " · " + project.shift : ""),
-    armed: ARMED_LABEL[project.armed] || project.armed,
-    duty: DUTY_LABEL[project.duty] || project.duty,
+    salary: project.salary || "",
+    payType: project.payType || "",
+    meal: project.meal || "",
+    transport: project.shuttle ? "Servis" : (project.transport || ""),
+    shift: shift,
+    armed: ARMED_LABEL[project.armed] || project.armed || "",
+    duty: DUTY_LABEL[project.duty] || project.duty || "",
+    gender: project.gender || "",
+    age: project.age ? String(project.age) : "",
+    lodging: project.lodging || "",
+    note: project.note || "",
+    operation: project.operation || "",
+    hr: project.hr || "",
   };
+}
+
+function termsMarkup(terms, referral) {
+  if (!terms) return "";
+  const bits = [];
+  if (terms.armed) bits.push(`<span>${escapeHtml(terms.armed)}</span>`);
+  if (terms.duty) bits.push(`<span>${escapeHtml(terms.duty)}</span>`);
+  if (terms.salary) {
+    const pay = terms.payType ? " (" + terms.payType + ")" : "";
+    bits.push(`<span>💰 ${escapeHtml(terms.salary + pay)}</span>`);
+  }
+  if (terms.shift) bits.push(`<span>⏰ ${escapeHtml(terms.shift)}</span>`);
+  if (terms.meal) bits.push(`<span>🍽️ ${escapeHtml(terms.meal)}</span>`);
+  if (terms.transport) bits.push(`<span>🚌 ${escapeHtml(terms.transport)}</span>`);
+  if (terms.age) bits.push(`<span>Yaş ≤ ${escapeHtml(terms.age)}</span>`);
+  if (terms.gender) bits.push(`<span>${escapeHtml(terms.gender)}</span>`);
+  if (terms.lodging) bits.push(`<span>🏠 ${escapeHtml(terms.lodging)}</span>`);
+  const people = [terms.operation ? "Operasyon: " + terms.operation : "", terms.hr ? "İK: " + terms.hr : ""].filter(Boolean);
+  const note = terms.note ? `<div class="result-card-note">${escapeHtml(terms.note)}</div>` : "";
+  const peopleRow = people.length ? `<div class="result-card-people">${escapeHtml(people.join(" · "))}</div>` : "";
+  const referralRow = referral ? `<div class="result-card-referral">${escapeHtml(referral)}</div>` : "";
+  const termsRow = bits.length ? `<div class="result-card-terms">${bits.join("")}</div>` : "";
+  const shuttle = terms.transport === "Servis"
+    ? '<div class="result-card-servis-note">Servis imkanı var. Süre, omurga toplu taşıma hesabıdır.</div>'
+    : "";
+  return referralRow + termsRow + shuttle + note + peopleRow;
 }
 
 function buildResultCard(opts) {
@@ -293,19 +370,6 @@ function buildResultCard(opts) {
   card.type = "button";
   card.className = "result-card" + (opts.highlight ? " result-card-active" : "") + (opts.urgent ? " result-card-urgent" : "");
   const terms = opts.terms;
-  const termsRow = terms
-    ? `<div class="result-card-terms">
-        <span>${escapeHtml(terms.armed)}</span>
-        <span>${escapeHtml(terms.duty)}</span>
-        <span>⏰ ${escapeHtml(terms.shift)}</span>
-        <span>🍽️ ${escapeHtml(terms.meal)}</span>
-        <span>🚌 ${escapeHtml(terms.transport)}</span>
-      </div>`
-    : "";
-  const shuttle = terms && terms.transport === "Servis"
-    ? '<div class="result-card-servis-note">Servis imkanı var. Süre, omurga toplu taşıma hesabıdır.</div>'
-    : "";
-  const referral = opts.referral ? `<div class="result-card-referral">${escapeHtml(opts.referral)}</div>` : "";
   card.innerHTML = `
     ${opts.urgent ? '<span class="result-card-urgent-badge">ACİL</span>' : ""}
     <div class="flex items-center justify-between gap-2">
@@ -318,9 +382,7 @@ function buildResultCard(opts) {
         <span class="text-[11px] text-slate-400 mt-1">${opts.transfers} aktarma</span>
       </div>
     </div>
-    ${referral}
-    ${termsRow}
-    ${shuttle}
+    ${termsMarkup(terms, opts.referral)}
     <div data-role="live-arrival"></div>`;
   card.addEventListener("click", () => {
     document.querySelectorAll(".result-card").forEach((item) => item.classList.remove("result-card-active"));
@@ -451,7 +513,9 @@ function renderOriginToProject(originId) {
   routesLayer.clearLayers();
   const origin = originById(originId);
   emptyState.classList.toggle("hidden", rows.length > 0);
-  emptyState.textContent = rows.length ? "" : "Bu ilçe için açık güvenlik projesi yok. Proje Ekle ile kayıt açın.";
+  emptyState.textContent = rows.length ? "" : (currentPosition
+    ? "Bu pozisyon filtresinde açık proje yok."
+    : "Bu ilçe için açık güvenlik projesi yok. Proje Ekle ile kayıt açın.");
   resultsHeading.textContent = origin.name + " → projeler (" + rows.length + ")";
   map.setView([origin.lat, origin.lng], 12, { animate: true });
   resultsList.innerHTML = "";
@@ -459,7 +523,7 @@ function renderOriginToProject(originId) {
     const bucket = durationBucket(row.durationMin);
     resultsList.appendChild(buildResultCard({
       title: row.project.name,
-      subtitle: row.project.position + " · " + row.project.address,
+      subtitle: projectSubtitle(row.project),
       durationMin: row.durationMin,
       transfers: row.transfers,
       bucket: bucket,
@@ -730,6 +794,8 @@ document.getElementById("inactiveModalSave").addEventListener("click", () => {
   inactiveModal.classList.add("hidden");
   runSearch();
 });
+
+renderCatalog();
 
 window.ikApp = {
   runSearch: runSearch,

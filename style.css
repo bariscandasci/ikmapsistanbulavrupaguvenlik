@@ -197,6 +197,8 @@ html, body { height: 100%; margin: 0; }
   font-size: 0.68rem; color: #64748b;
 }
 .result-card-referral { margin-top: 0.4rem; font-size: 0.68rem; font-weight: 600; color: #6366f1; }
+.result-card-note { margin-top: 0.35rem; font-size: 0.68rem; color: #475569; line-height: 1.35; }
+.result-card-people { margin-top: 0.3rem; font-size: 0.68rem; font-weight: 600; color: #334155; }
 .result-card-servis-note {
   margin-top: 0.4rem; font-size: 0.68rem; font-weight: 600; color: #0f766e;
   background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 0.4rem;

@@ -80,7 +80,7 @@ function importWorkbook(workbook) {
       position: positionCell,
       armed: armedCell.includes("silahlı") && !armedCell.includes("sız") ? "silahli" : armedCell.includes("silahsız") || armedCell.includes("silahsiz") ? "silahsiz" : "",
       duty: idx.duty >= 0 ? String(row[idx.duty] || "") : "",
-      shiftPattern: shiftCell.includes("12") ? "12/36" : shiftCell.includes("8") ? "8/16" : "",
+      shiftPattern: shiftCell.includes("2+2") ? "2+2+2" : shiftCell.includes("12") ? "12/36" : shiftCell.includes("8") ? "8/16" : "",
       addressText: idx.address >= 0 ? String(row[idx.address] || "") : "",
     });
     count += 1;

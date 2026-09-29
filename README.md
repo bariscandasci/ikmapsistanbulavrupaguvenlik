@@ -1,6 +1,6 @@
 # İstanbul Avrupa Yakası Güvenlik Projeleri
 
-Ankara `ikmapsv2` harita ve eşleştirme iskeletinin Avrupa yakası güvenlik sürümü. Proje portföyü henüz boştur; ilçe listesi, omurga hatları ve güvenlik kart şeması hazırdır.
+Ankara `ikmapsv2` harita ve eşleştirme iskeletinin Avrupa yakası güvenlik sürümü. Proje portföyü `PROJE_KONUM` tablosundaki 7 kayıttır.
 
 ## Çalıştırma
 
@@ -29,4 +29,4 @@ Omurga hatları: M1A, M1B, M2, M3, M7, M9, M11, T1, T4, T5, Marmaray (Sirkeci–
 
 ## Güvenlik proje şeması
 
-`SECURITY_PROJECT_FIELDS` / `createSecurityProject`: pozisyon, silahlı/silahsız, danışma/gözetim, vardiya `8/16` veya `12/36`, yol, yemek, servis imkanı. Kayıtlar tarayıcıda saklanır.
+`SECURITY_PROJECT_FIELDS` / `createSecurityProject`: pozisyon, silahlı/silahsız, danışma/gözetim, vardiya `8/16`, `12/36` veya `2+2+2`, yol, yemek, servis, maaş, yaş sınırı, lojman. Tablodaki 7 projenin koordinatı konum linklerinden alınır. Kayıt düzenlemeleri tarayıcıda saklanır.
