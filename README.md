@@ -8,7 +8,7 @@ Ankara `ikmapsv2` harita ve eşleştirme iskeletinin Avrupa yakası güvenlik s�
 npm start
 ```
 
-Uygulama `http://127.0.0.1:8812` adresinde açılır. Python vekili için `npm run start:py`. Rota duman testi: `npm test`.
+Uygulama `http://127.0.0.1:8820` adresinde açılır. Ankara projesi 8812 portunda kaldığı için bu iskelet 8820 kullanır. Python vekili için `npm run start:py`. Rota duman testi: `npm test`.
 
 Harita Leaflet ile **41.05, 28.90** merkezinde ve **zoom 11** ile açılır. Karolar OpenStreetMap’tendir.
 

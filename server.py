@@ -45,6 +45,6 @@ class Handler(SimpleHTTPRequestHandler):
 
 if __name__ == "__main__":
     host = "0.0.0.0"
-    port = 8812
+    port = 8820
     print(f"İstanbul Avrupa güvenlik iskeleti http://{host}:{port}")
     ThreadingHTTPServer((host, port), Handler).serve_forever()

@@ -11,7 +11,7 @@ const fs = require("fs");
 const path = require("path");
 const { URL } = require("url");
 
-const PORT = Number(process.env.PORT || 8812);
+const PORT = Number(process.env.PORT || 8820);
 const HOST = process.env.HOST || "0.0.0.0";
 const ROOT = __dirname;
 const HAT_RE = /^[0-9A-Za-z][0-9A-Za-z\-]{0,15}$/;
