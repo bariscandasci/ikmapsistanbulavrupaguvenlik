@@ -144,6 +144,42 @@ function wait(ms) {
   const lines = etiRoute.steps.map((step) => step.line).join(" | ");
   assert(/metrobüs|34|142|144/i.test(lines), "Eti rotasında omurga/besleme yok: " + lines);
 
+  const torium = data.projects.find((p) => p.id === "proj_torium");
+  const liv = data.projects.find((p) => p.id === "proj_liv_hospital");
+  const mengenler = data.projects.find((p) => p.id === "proj_mengenler");
+  const beylikduzu = data.districts.find((d) => d.id === "beylikduzu").neighborhoods[0];
+  const mecidiyekoy = data.districts.find((d) => d.id === "sisli").neighborhoods.find((n) => n.id === "sisli_mecidiyekoy");
+  const esenyurt = data.districts.find((d) => d.id === "esenyurt").neighborhoods[0];
+
+  const toriumRoute = estimate(
+    { name: beylikduzu.name, coords: { lat: beylikduzu.lat, lng: beylikduzu.lng }, stopId: beylikduzu.accessStopId },
+    { name: torium.name, coords: { lat: torium.lat, lng: torium.lng }, stopId: torium.accessStopId }
+  );
+  assert(toriumRoute.verified, "Torium doğrulanamadı");
+  assert(toriumRoute.durationMin <= 25, "Beylikdüzü→Torium hâlâ uzun: " + toriumRoute.durationMin);
+  assert(toriumRoute.steps.some((s) => /Haramidere Sanayi/.test(s.to || "")), "Torium Haramidere Sanayi'de inmiyor: " + toriumRoute.steps.map((s) => s.to).join(" | "));
+
+  const livRoute = estimate(
+    { name: esenyurt.name, coords: { lat: esenyurt.lat, lng: esenyurt.lng }, stopId: esenyurt.accessStopId },
+    { name: liv.name, coords: { lat: liv.lat, lng: liv.lng }, stopId: liv.accessStopId }
+  );
+  assert(livRoute.verified, "Liv doğrulanamadı");
+  assert(livRoute.durationMin <= 30, "Esenyurt→Liv hâlâ dolanıyor: " + livRoute.durationMin);
+  assert(livRoute.steps.some((s) => s.to === "Esenkent"), "Liv Esenkent'te inmiyor: " + livRoute.steps.map((s) => s.to).join(" | "));
+
+  const mengenlerRoute = estimate(
+    { name: mecidiyekoy.name, coords: { lat: mecidiyekoy.lat, lng: mecidiyekoy.lng }, stopId: mecidiyekoy.accessStopId },
+    { name: mengenler.name, coords: { lat: mengenler.lat, lng: mengenler.lng }, stopId: mengenler.accessStopId }
+  );
+  assert(mengenlerRoute.verified, "Mengenler doğrulanamadı");
+  assert(mengenlerRoute.steps.some((s) => s.to === "Etiler"), "Mengenler Etiler kapısında inmiyor: " + mengenlerRoute.steps.map((s) => s.to).join(" | "));
+
+  const mecidiyekoyTorium = estimate(
+    { name: mecidiyekoy.name, coords: { lat: mecidiyekoy.lat, lng: mecidiyekoy.lng }, stopId: mecidiyekoy.accessStopId },
+    { name: torium.name, coords: { lat: torium.lat, lng: torium.lng }, stopId: torium.accessStopId }
+  );
+  assert(mecidiyekoyTorium.durationMin <= 90, "Mecidiyeköy→Torium metrobüs hâlâ yavaş: " + mecidiyekoyTorium.durationMin);
+
   console.log("smoke ok", {
     mallMin: mallRoute.durationMin,
     mallLines: mallRoute.steps.filter((s) => s.lineId).map((s) => s.line),

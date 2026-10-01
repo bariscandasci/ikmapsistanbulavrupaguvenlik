@@ -2,7 +2,7 @@
  * ANKARA_DATA — Ankara ikmapsv2 ile aynı şema.
  * Projeler PROJE_KONUM İstanbul güvenlik kayıtlarıdır.
  * Durak ve hatlar İstanbul Avrupa omurgasıdır (M1A, M1B, M2, M3, M7, M9, M11,
- * T1, T4, T5, Marmaray, Metrobüs, 142 / 142ES / 144).
+ * T1, T4, T5, Marmaray, Metrobüs, 142 / 142ES / 144, 43R).
  * Graf ve çizim transit_network.json + transit_network_geometry.json üzerinden
  * Ankara app.js motorunu kullanır.
  */
@@ -489,7 +489,7 @@ const ANKARA_DATA = {
       "address": "Haramidere, Beylikdüzü",
       "lat": 41.0041831,
       "lng": 28.6878147,
-      "accessStopId": "mb_haramidere",
+      "accessStopId": "mb_haramidere_sanayi",
       "shift": "2+2+2 · 4 çalış 2 izin",
       "salary": "40.000 TL Brüt maaş",
       "meal": "PROJEDEN + 5000 TL MULTİNER",
@@ -561,7 +561,7 @@ const ANKARA_DATA = {
       "address": "Esenkent, Esenyurt",
       "lat": 41.0563428,
       "lng": 28.6717817,
-      "accessStopId": "bus_142_kirac",
+      "accessStopId": "bus_142_esenkent",
       "shift": "2+2+2 · 4 çalış 2 izin",
       "salary": "42.241 TL Brüt maaş",
       "meal": "PROJEDEN",
@@ -579,7 +579,7 @@ const ANKARA_DATA = {
       "address": "Etiler, Beşiktaş",
       "lat": 41.0814212,
       "lng": 29.0345988,
-      "accessStopId": "stop_levent",
+      "accessStopId": "stop_etiler",
       "shift": "2+2+2 · 4 çalış 2 izin",
       "salary": "42.000 TL Net maaş",
       "meal": "5500 MULTİNET",
@@ -1803,8 +1803,15 @@ const ANKARA_DATA = {
       "id": "mb_haramidere",
       "name": "Haramidere",
       "mode": "otobus",
-      "lat": 40.99,
-      "lng": 28.69
+      "lat": 41.005871,
+      "lng": 28.676849
+    },
+    {
+      "id": "mb_haramidere_sanayi",
+      "name": "Haramidere Sanayi",
+      "mode": "otobus",
+      "lat": 41.004437,
+      "lng": 28.684929
     },
     {
       "id": "mb_sukrubey",
@@ -2001,6 +2008,20 @@ const ANKARA_DATA = {
       "mode": "otobus",
       "lat": 41.0345,
       "lng": 28.6785
+    },
+    {
+      "id": "bus_142_esenkent",
+      "name": "Esenkent",
+      "mode": "otobus",
+      "lat": 41.0556,
+      "lng": 28.6723
+    },
+    {
+      "id": "stop_etiler",
+      "name": "Etiler",
+      "mode": "otobus",
+      "lat": 41.0807,
+      "lng": 29.0338
     },
     {
       "id": "bus_142_kirac",
@@ -2356,6 +2377,7 @@ const ANKARA_DATA = {
         "mb_beylikduzu",
         "mb_beykent",
         "mb_haramidere",
+        "mb_haramidere_sanayi",
         "mb_avcilar",
         "mb_sukrubey",
         "mb_cennet",
@@ -2394,7 +2416,9 @@ const ANKARA_DATA = {
       "stopIds": [
         "mb_beylikduzu",
         "bus_142_adnan_kahveci",
+        "mb_haramidere_sanayi",
         "bus_142_esenyurt",
+        "bus_142_esenkent",
         "bus_142_kirac",
         "bus_142_akcaburgaz",
         "bus_akcaburgaz_eti"
@@ -2405,11 +2429,13 @@ const ANKARA_DATA = {
       "name": "142ES: Beylikdüzü → Akçaburgaz",
       "mode": "otobus",
       "verified": true,
-      "source": "142 ekspres beslemesi — aynı uç düğümler, ara duraksız",
+      "source": "142 ekspres beslemesi — Esenkent kapısından geçer, Kıraç'ı atlar",
       "hatNo": "142ES",
       "stopIds": [
         "mb_beylikduzu",
+        "mb_haramidere_sanayi",
         "bus_142_esenyurt",
+        "bus_142_esenkent",
         "bus_142_akcaburgaz",
         "bus_akcaburgaz_eti"
       ]
@@ -2423,10 +2449,24 @@ const ANKARA_DATA = {
       "hatNo": "144",
       "stopIds": [
         "mb_haramidere",
+        "mb_haramidere_sanayi",
         "bus_144_haramidere_kuzey",
         "bus_142_esenyurt",
         "bus_142_akcaburgaz",
         "bus_akcaburgaz_eti"
+      ]
+    },
+    {
+      "id": "IETT_43R",
+      "name": "43R: Zincirlikuyu → Etiler → Levent",
+      "mode": "otobus",
+      "verified": true,
+      "source": "Etiler kapı beslemesi. Nispetiye otobüsü Levent metrosu ve Zincirlikuyu metrobüsüne bağlanır.",
+      "hatNo": "43R",
+      "stopIds": [
+        "mb_zincirlikuyu",
+        "stop_etiler",
+        "stop_levent"
       ]
     }
   ],
@@ -2436,6 +2476,9 @@ const ANKARA_DATA = {
     "bus_akcaburgaz_eti",
     "mb_beylikduzu",
     "mb_haramidere",
+    "mb_haramidere_sanayi",
+    "bus_142_esenkent",
+    "stop_etiler",
     "stop_aksaray",
     "stop_atakoy",
     "stop_bayrampasa_maltepe",

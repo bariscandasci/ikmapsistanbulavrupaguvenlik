@@ -206,6 +206,11 @@ function roundTo5(n) {
 // itirazı artık geçerli değil (Etlik→Bilkent Center hâlâ metro tabanlı, Etlik→
 // Medical Park hâlâ 261→480 — doğrulandı). Pursaklar→Nazende 139→120 dk.
 const MODE_SPEED_KMH = { otobus: 20, metro: 33, ankaray: 33, tren: 45, dolmus: 20 };
+// Metrobüs şehir içi otobüs değildir. 20 km/s, Mecidiyeköy–Haramidere'yi
+// Google'daki ~75 dk yerine ~130 dk yapıyordu. 32 km/s + kısa duraklama,
+// Beylikdüzü–Zincirlikuyu bandını (~80 dk) ve kapı yürüyüşünü birlikte tutar.
+const METROBUS_SPEED_KMH = 32;
+const METROBUS_DWELL_MIN = 0.35;
 // Havalimanı ekspresi (442) ve D140 / Özal Bulvarı üzerindeki uzun etaplar
 // şehir içi 20 km/s ile gidilmez — durak arası birkaç kilometre, ışıksız
 // arter. 48 km/s, istenen 45-50 bandının ortası. Kısa (2.2 km altı) durak
@@ -257,6 +262,9 @@ const MODE_HEADWAY_MIN = { otobus: 12, metro: 6, ankaray: 6, tren: 15, dolmus: 1
 // Pursaklar→Esenboğa böylece ~30 dk bandında durur.
 const LINE_HEADWAY_MIN = {
   "442": 24,
+  // Metrobüs gündüz birkaç dakikada bir gelir; 12 dk'lık otobüs aralığının
+  // yarısı (6 dk) her binişe fazladan bekletiyordu.
+  "34": 4,
 };
 // Seçim cezası gösterilen süreye girmez. Ek aktarma, en az bu kadar gerçek
 // dakika kazandırmıyorsa elenir — çevre yolu / bulvar / metro dururken
@@ -302,6 +310,9 @@ const OHO_CORRIDOR_HATS = new Set(["220-7"]);
 function isOhoCorridorLine(line) {
   if (!line || line.mode !== "otobus") return false;
   return OHO_CORRIDOR_HATS.has(line.hatNo);
+}
+function isMetrobusLine(line) {
+  return !!(line && (line.hatNo === "34" || line.id === "METROBUS"));
 }
 function inceKChainPenalty(prevHat, nextHat, origin) {
   if (!nextHat || !prevHat) return 0;
@@ -494,11 +505,12 @@ function buildTransitGraph(network, options) {
       const b = stopsById.get(ids[i + 1]);
       if (!a || !b) continue;
       const km = haversineKm({ lat: a.lat, lng: a.lng }, { lat: b.lat, lng: b.lng });
-      const arterial = isArterialAirportEdge(line, a, b, km);
-      const boulevard = !arterial && isBoulevardConnectorLine(line) && km <= BOULEVARD_EDGE_MAX_KM;
-      const oho = !arterial && !boulevard && isOhoCorridorLine(line) && km <= OHO_CORRIDOR_EDGE_MAX_KM;
-      const speed = arterial ? ARTERIAL_BUS_SPEED_KMH : boulevard ? BOULEVARD_BUS_SPEED_KMH : oho ? OHO_CORRIDOR_SPEED_KMH : MODE_SPEED_KMH[line.mode] || MODE_SPEED_KMH.otobus;
-      const dwell = boulevard ? BOULEVARD_DWELL_MIN : oho ? OHO_CORRIDOR_DWELL_MIN : STOP_DWELL_MIN;
+      const metrobus = isMetrobusLine(line);
+      const arterial = !metrobus && isArterialAirportEdge(line, a, b, km);
+      const boulevard = !metrobus && !arterial && isBoulevardConnectorLine(line) && km <= BOULEVARD_EDGE_MAX_KM;
+      const oho = !metrobus && !arterial && !boulevard && isOhoCorridorLine(line) && km <= OHO_CORRIDOR_EDGE_MAX_KM;
+      const speed = metrobus ? METROBUS_SPEED_KMH : arterial ? ARTERIAL_BUS_SPEED_KMH : boulevard ? BOULEVARD_BUS_SPEED_KMH : oho ? OHO_CORRIDOR_SPEED_KMH : MODE_SPEED_KMH[line.mode] || MODE_SPEED_KMH.otobus;
+      const dwell = metrobus ? METROBUS_DWELL_MIN : boulevard ? BOULEVARD_DWELL_MIN : oho ? OHO_CORRIDOR_DWELL_MIN : STOP_DWELL_MIN;
       const minutes = (km / speed) * 60 + dwell;
       const headwayMin = lineHeadwayMin(line);
       addEdge(a.id, b.id, minutes, line.id, line.mode, arterial, headwayMin, line.hatNo);
@@ -1244,7 +1256,10 @@ const KNOWN_STOP_NAME_INDEX = [
   ["ayvansaray", "stop_ayvansaray"],
   ["küçükpazar", "stop_kucukpazar"],
   ["seyrantepe", "stop_seyrantepe"],
+  ["haramidere sanayi", "mb_haramidere_sanayi"],
   ["haramidere", "mb_haramidere"],
+  ["esenkent", "bus_142_esenkent"],
+  ["etiler", "stop_etiler"],
   ["şirinevler", "mb_sirinevler"],
   ["cevizlibağ", "mb_cevizlibag"],
   ["halıcıoğlu", "mb_halicioglu"],
@@ -1378,7 +1393,7 @@ function loadDolmusLines() {
 function loadLocalTransitNetwork() {
   if (localTransitNetworkPromise) return localTransitNetworkPromise;
   localTransitNetworkPromise = Promise.all([
-    fetch("transit_network.json?v=5").then((res) => res.json()),
+    fetch("transit_network.json?v=6").then((res) => res.json()),
     loadDolmusLines(),
   ])
     .then(([egoData, dolmusData]) => {
