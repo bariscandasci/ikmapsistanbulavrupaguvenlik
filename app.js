@@ -116,13 +116,12 @@ function stopApproxCoords() {
 
 /** Basit haversine ile en yakın gerçek durağı bulur — yeni eklenen bir proje için otomatik durak ataması. */
 function nearestTransitStop(lat, lng) {
-  const coords = stopApproxCoords();
+  const pool = localStopsById ? Object.values(localStopsById) : ANKARA_DATA.transitStops;
   let best = null;
   let bestDist = Infinity;
-  ANKARA_DATA.transitStops.forEach((s) => {
-    const c = coords[s.id];
-    if (!c) return;
-    const d = haversineKm({ lat, lng }, c);
+  pool.forEach((s) => {
+    if (typeof s.lat !== "number" || typeof s.lng !== "number") return;
+    const d = haversineKm({ lat, lng }, { lat: s.lat, lng: s.lng });
     if (d < bestDist) {
       bestDist = d;
       best = s;
@@ -312,7 +311,8 @@ function isOhoCorridorLine(line) {
   return OHO_CORRIDOR_HATS.has(line.hatNo);
 }
 function isMetrobusLine(line) {
-  return !!(line && (line.hatNo === "34" || line.id === "METROBUS"));
+  if (!line || line.mode !== "otobus") return false;
+  return line.id === "METROBUS" || /^34[A-Z]*$/.test(line.hatNo || "");
 }
 function inceKChainPenalty(prevHat, nextHat, origin) {
   if (!nextHat || !prevHat) return 0;
@@ -331,6 +331,7 @@ function inceKChainPenalty(prevHat, nextHat, origin) {
   return 0;
 }
 function lineHeadwayMin(line) {
+  if (isMetrobusLine(line)) return LINE_HEADWAY_MIN["34"];
   if (line && Object.prototype.hasOwnProperty.call(LINE_HEADWAY_MIN, line.hatNo)) {
     return LINE_HEADWAY_MIN[line.hatNo];
   }
@@ -1393,7 +1394,7 @@ function loadDolmusLines() {
 function loadLocalTransitNetwork() {
   if (localTransitNetworkPromise) return localTransitNetworkPromise;
   localTransitNetworkPromise = Promise.all([
-    fetch("transit_network.json?v=6").then((res) => res.json()),
+    fetch("transit_network.json?v=8").then((res) => res.json()),
     loadDolmusLines(),
   ])
     .then(([egoData, dolmusData]) => {
