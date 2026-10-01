@@ -13,7 +13,7 @@
 // listeyi görür ve "Proje Ekle"/"Acil"/"Aç-Kapa" değişiklikleri herkese
 // yansır. data.js'teki liste yalnızca ilk yükleme anında (Sheet'e henüz
 // ulaşılamadıysa) çevrimdışı bir yedek olarak kullanılır.
-const SHEET_API_URL = "";
+const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbxK0P6RVaMEqxJaAdvxFhBh0MbHIeiywb3NfTxdqTKjC8KTY5OXVZGFroUkK4D87u8/exec";
 const SHEET_CACHE_KEY = "ik_istanbul_avrupa_sheet_cache_v1";
 
 // Sheet'e başarılı bir yazmadan hemen sonra yerel önbelleği de günceller.
