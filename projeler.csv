@@ -1,0 +1,8 @@
+id,name,sector,address,lat,lng,accessStopId,shift,salary,meal,transport,referral,gender,urgent,active,capacity,position
+proj_torium,Torium,Güvenlik,"Haramidere, Beylikdüzü",41.0041831,28.6878147,mb_haramidere,2+2+2 / 4 çalış 2 izin,40.000 TL Brüt maaş,PROJEDEN + 5000 TL MULTİNER,-,İK ANIL YOGURTÇU,Erkek,FALSE,TRUE,,
+proj_mall_of_avm,Mall of AVM,Güvenlik,"İkitelli, Başakşehir",41.0625272,28.8075256,stop_masko,2+2+2 / 4 çalış 2 izin,40.000 TL Brüt maaş,PROJEDEN + 5000 TL MULTİNER,-,İK ANIL YOGURTÇU,Erkek,FALSE,TRUE,,
+proj_medipol,Medipol Hastanesi,Güvenlik,"Yenibosna, Bahçelievler",40.9983995,28.8304931,mb_yenibosna,2+2+2 / 4 çalış 2 izin,35.872 TL Brüt maaş,PROJEDEN + 5000 TL MULTİNER,3.628 TL,İK BURCU BAYRAK,Erkek,FALSE,TRUE,,
+proj_eti_dpo,Eti DPO,Güvenlik,"Akçaburgaz, Esenyurt",41.0792312,28.6354638,bus_akcaburgaz_eti,2+2+2 / 4 çalış 2 izin,45.372 TL Brüt maaş,11.000 TL NAKİT YEMEK,3.628 TL,İK BURCU BAYRAK,Erkek,FALSE,TRUE,,
+proj_liv_hospital,Liv Hospital,Güvenlik,"Esenkent, Esenyurt",41.0563428,28.6717817,bus_142_kirac,2+2+2 / 4 çalış 2 izin,42.241 TL Brüt maaş,PROJEDEN,3.298 TL,İK ŞAHİN KOÇALİ,Erkek,FALSE,TRUE,,
+proj_mengenler,Mengenler,Güvenlik,"Etiler, Beşiktaş",41.0814212,29.0345988,stop_levent,2+2+2 / 4 çalış 2 izin,42.000 TL Net maaş,5500 MULTİNET,-,İK ŞAHİN KOÇALİ,Erkek,FALSE,TRUE,,
+proj_ortakoy_republika,Ortaköy Republika,Güvenlik,"Balmumcu, Beşiktaş",41.0542874,29.0206898,stop_yildiz,2+2+2 / 4 çalış 2 izin,44.000 TL Net maaş,PROJEDEN,3.628 TL,İK BURCU BAYRAK,Erkek,FALSE,TRUE,,
