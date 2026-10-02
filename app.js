@@ -210,6 +210,14 @@ const MODE_SPEED_KMH = { otobus: 20, metro: 33, ankaray: 33, tren: 45, dolmus: 2
 // Beylikdüzü–Zincirlikuyu bandını (~80 dk) ve kapı yürüyüşünü birlikte tutar.
 const METROBUS_SPEED_KMH = 32;
 const METROBUS_DWELL_MIN = 0.35;
+// Minibüs hatları (mbs_) İETT durağı değil, güzergah çizgisinden ~400 m'de bir
+// örneklenmiş nokta. Durak başına 0.4 dk bu noktaları gerçek indirme sayıp
+// A30'u Google'daki ~50 dk yerine bir saatin üstüne çıkarıyordu. 22 km/s ve
+// kısa duraklama, seyrek örneği yol süresine yaklaştırır. 1.6 km üstü kenar
+// veri boşluğudur, minibüs hızı uygulanmaz.
+const MINIBUS_SPEED_KMH = 22;
+const MINIBUS_DWELL_MIN = 0.12;
+const MINIBUS_EDGE_MAX_KM = 1.6;
 // Havalimanı ekspresi (442) ve D140 / Özal Bulvarı üzerindeki uzun etaplar
 // şehir içi 20 km/s ile gidilmez — durak arası birkaç kilometre, ışıksız
 // arter. 48 km/s, istenen 45-50 bandının ortası. Kısa (2.2 km altı) durak
@@ -313,6 +321,9 @@ function isOhoCorridorLine(line) {
 function isMetrobusLine(line) {
   if (!line || line.mode !== "otobus") return false;
   return line.id === "METROBUS" || /^34[A-Z]*$/.test(line.hatNo || "");
+}
+function isMinibusLine(line) {
+  return !!(line && typeof line.id === "string" && line.id.startsWith("mbs_"));
 }
 function inceKChainPenalty(prevHat, nextHat, origin) {
   if (!nextHat || !prevHat) return 0;
@@ -510,8 +521,9 @@ function buildTransitGraph(network, options) {
       const arterial = !metrobus && isArterialAirportEdge(line, a, b, km);
       const boulevard = !metrobus && !arterial && isBoulevardConnectorLine(line) && km <= BOULEVARD_EDGE_MAX_KM;
       const oho = !metrobus && !arterial && !boulevard && isOhoCorridorLine(line) && km <= OHO_CORRIDOR_EDGE_MAX_KM;
-      const speed = metrobus ? METROBUS_SPEED_KMH : arterial ? ARTERIAL_BUS_SPEED_KMH : boulevard ? BOULEVARD_BUS_SPEED_KMH : oho ? OHO_CORRIDOR_SPEED_KMH : MODE_SPEED_KMH[line.mode] || MODE_SPEED_KMH.otobus;
-      const dwell = metrobus ? METROBUS_DWELL_MIN : boulevard ? BOULEVARD_DWELL_MIN : oho ? OHO_CORRIDOR_DWELL_MIN : STOP_DWELL_MIN;
+      const minibus = !metrobus && !arterial && !boulevard && !oho && isMinibusLine(line) && km <= MINIBUS_EDGE_MAX_KM;
+      const speed = metrobus ? METROBUS_SPEED_KMH : arterial ? ARTERIAL_BUS_SPEED_KMH : boulevard ? BOULEVARD_BUS_SPEED_KMH : oho ? OHO_CORRIDOR_SPEED_KMH : minibus ? MINIBUS_SPEED_KMH : MODE_SPEED_KMH[line.mode] || MODE_SPEED_KMH.otobus;
+      const dwell = metrobus ? METROBUS_DWELL_MIN : boulevard ? BOULEVARD_DWELL_MIN : oho ? OHO_CORRIDOR_DWELL_MIN : minibus ? MINIBUS_DWELL_MIN : STOP_DWELL_MIN;
       const minutes = (km / speed) * 60 + dwell;
       const headwayMin = lineHeadwayMin(line);
       addEdge(a.id, b.id, minutes, line.id, line.mode, arterial, headwayMin, line.hatNo);
@@ -1394,7 +1406,7 @@ function loadDolmusLines() {
 function loadLocalTransitNetwork() {
   if (localTransitNetworkPromise) return localTransitNetworkPromise;
   localTransitNetworkPromise = Promise.all([
-    fetch("transit_network.json?v=8").then((res) => res.json()),
+    fetch("transit_network.json?v=9").then((res) => res.json()),
     loadDolmusLines(),
   ])
     .then(([egoData, dolmusData]) => {
@@ -1439,7 +1451,7 @@ let localTransitGeometry = null;
 let localTransitGeometryPromise = null;
 function loadLocalTransitGeometry() {
   if (localTransitGeometryPromise) return localTransitGeometryPromise;
-  localTransitGeometryPromise = fetch("transit_network_geometry.json?v=7")
+  localTransitGeometryPromise = fetch("transit_network_geometry.json?v=8")
     .then((res) => res.json())
     .then((data) => {
       localTransitGeometry = data;

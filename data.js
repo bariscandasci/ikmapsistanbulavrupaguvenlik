@@ -2,7 +2,7 @@
  * ANKARA_DATA — Ankara ikmapsv2 ile aynı şema.
  * Projeler PROJE_KONUM İstanbul güvenlik kayıtlarıdır.
  * Durak ve hatlar İstanbul Avrupa omurgasıdır (M1A, M1B, M2, M3, M7, M9, M11,
- * T1, T4, T5, Marmaray ve İBB İETT GTFS otobüs hatları.
+ * T1, T4, T5, Marmaray, İBB İETT GTFS otobüs hatları ve İBB minibüs güzergahları.
  * Graf ve çizim transit_network.json + transit_network_geometry.json üzerinden
  * Ankara app.js motorunu kullanır.
  */

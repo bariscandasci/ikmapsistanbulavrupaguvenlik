@@ -90,7 +90,7 @@ vm.createContext(context);
 const appSource = [
   fs.readFileSync(path.join(root, "data.js"), "utf8"),
   fs.readFileSync(path.join(root, "app.js"), "utf8"),
-  "loadLocalTransitNetwork().then(function () { globalThis.__graph = transitGraph; globalThis.__estimate = estimateTransit; globalThis.__shape = rideShapeLatLngs; });",
+  "loadLocalTransitNetwork().then(function () { return loadLocalTransitGeometry(); }).then(function () { globalThis.__graph = transitGraph; globalThis.__estimate = estimateTransit; globalThis.__shape = rideShapeLatLngs; });",
 ].join("\n");
 
 vm.runInContext(appSource, context);
@@ -126,10 +126,17 @@ function wait(ms) {
   );
   assert(mallRoute.verified, "Mall rotası doğrulanamadı: " + mallRoute.routeSummary);
   assert(mallRoute.durationMin <= 70, "Bağcılar→Mall hâlâ uzun: " + mallRoute.durationMin);
-  assert(mallRoute.steps.some((step) => step.lineId && step.lineId.startsWith("iett_")), "Mall rotası otobüs kullanmıyor: " + mallRoute.steps.map((s) => s.line).join(" | "));
+  assert(
+    mallRoute.steps.some((step) => step.lineId && (step.lineId.startsWith("iett_") || step.lineId.startsWith("mbs_"))),
+    "Mall rotası otobüs kullanmıyor: " + mallRoute.steps.map((s) => s.line).join(" | ")
+  );
   const busLines = network.lines.filter((line) => line.mode === "otobus");
   assert(busLines.length > 400, "İETT hatları eksik: " + busLines.length);
   assert(busLines.some((line) => line.hatNo === "146T"), "146T yok");
+  const a30 = busLines.find((line) => line.id === "mbs_a30_4");
+  assert(a30 && /Otocenter/i.test(a30.name), "A30 Bağcılar-Otocenter-MOİ yok");
+  const a30Shape = shape({ lineId: a30.id, fromStopId: a30.stopIds[0], toStopId: a30.stopIds[Math.min(12, a30.stopIds.length - 1)] });
+  assert(a30Shape && a30Shape.length >= 20, "A30 yolu düz kiriş olarak kalıyor: " + (a30Shape && a30Shape.length));
   const m3 = {
     lineId: "M3",
     fromStopId: "stop_kirazli",
