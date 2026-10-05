@@ -523,7 +523,10 @@ function buildTransitGraph(network, options) {
       const oho = !metrobus && !arterial && !boulevard && isOhoCorridorLine(line) && km <= OHO_CORRIDOR_EDGE_MAX_KM;
       const minibus = !metrobus && !arterial && !boulevard && !oho && isMinibusLine(line) && km <= MINIBUS_EDGE_MAX_KM;
       const speed = metrobus ? METROBUS_SPEED_KMH : arterial ? ARTERIAL_BUS_SPEED_KMH : boulevard ? BOULEVARD_BUS_SPEED_KMH : oho ? OHO_CORRIDOR_SPEED_KMH : minibus ? MINIBUS_SPEED_KMH : MODE_SPEED_KMH[line.mode] || MODE_SPEED_KMH.otobus;
-      const dwell = metrobus ? METROBUS_DWELL_MIN : boulevard ? BOULEVARD_DWELL_MIN : oho ? OHO_CORRIDOR_DWELL_MIN : minibus ? MINIBUS_DWELL_MIN : STOP_DWELL_MIN;
+      // İETT durakları ~300 m'de bir. Her kısa aralığa 0.4 dk eklemek, bütün
+      // projelerde otobüsü Google'dakinden 15–25 dk yavaş bırakıyordu.
+      let dwell = metrobus ? METROBUS_DWELL_MIN : boulevard ? BOULEVARD_DWELL_MIN : oho ? OHO_CORRIDOR_DWELL_MIN : minibus ? MINIBUS_DWELL_MIN : STOP_DWELL_MIN;
+      if (line.mode === "otobus" && !metrobus && !minibus && km < 0.5) dwell = Math.min(dwell, 0.18);
       const minutes = (km / speed) * 60 + dwell;
       const headwayMin = lineHeadwayMin(line);
       addEdge(a.id, b.id, minutes, line.id, line.mode, arterial, headwayMin, line.hatNo);
@@ -587,6 +590,28 @@ function stopsWithinRadius(graph, lat, lng, radiusKm, requireReliableCoord) {
   }
   results.sort((a, b) => a.km - b.km);
   return results;
+}
+
+// İstanbul'da bir noktanın 200 m çevresinde düzinelerce otobüs durağı var.
+// Sadece en yakın 10 durak alınırsa metro ve metrobüs istasyonu (300–1200 m)
+// aday listesine hiç girmez; hesap kapıdaki dolmuşu seçer, Google'ın çizdiği
+// metro/metrobüs koridoru hiç görünmez. Bu, tek projeye özel değil: bütün
+// proje ve kalkış noktalarında aynı eleme oluyordu.
+const TRUNK_ACCESS_KM = 1.5;
+function stopIsTrunk(stopId) {
+  const lines = (linesByLocalStopId && linesByLocalStopId[stopId]) || [];
+  return lines.some((line) => line.mode === "metro" || line.mode === "ankaray" || line.mode === "tren" || isMetrobusLine(line));
+}
+function routeAccessCandidates(graph, lat, lng) {
+  const all = stopsWithinRadius(graph, lat, lng, NEAREST_STOP_SEARCH_KM, true);
+  const nearest = all.slice(0, NEAREST_STOP_MAX_CANDIDATES);
+  const seen = new Set(nearest.map((c) => c.stop.id));
+  all.forEach((c) => {
+    if (c.km > TRUNK_ACCESS_KM || seen.has(c.stop.id) || !stopIsTrunk(c.stop.id)) return;
+    seen.add(c.stop.id);
+    nearest.push(c);
+  });
+  return nearest;
 }
 
 /**
@@ -719,8 +744,7 @@ function getDijkstraFrom(coords, graph = transitGraph, transferPenaltyMin = 0, f
   }
   const cached = variants.get(variant);
   if (cached && cached.key === key) return cached.result;
-  const sources = stopsWithinRadius(graph, coords.lat, coords.lng, NEAREST_STOP_SEARCH_KM, true)
-    .slice(0, NEAREST_STOP_MAX_CANDIDATES)
+  const sources = routeAccessCandidates(graph, coords.lat, coords.lng)
     .map(({ stop, km }) => ({ stopId: stop.id, startMinutes: walkMinutes(km) * WALK_PENALTY_FACTOR, realStart: walkMinutes(km) }));
   const result = runDijkstra(graph, sources, transferPenaltyMin, feedOrigin);
   variants.set(variant, { key, result });
@@ -754,10 +778,7 @@ function findRealRoute(originCoords, destCoords, graph = transitGraph, fixedSide
     transferPenaltyMin,
     fixedSide === "dest" ? null : originCoords
   );
-  const toCandidates = stopsWithinRadius(graph, toCoords.lat, toCoords.lng, NEAREST_STOP_SEARCH_KM, true).slice(
-    0,
-    NEAREST_STOP_MAX_CANDIDATES
-  );
+  const toCandidates = routeAccessCandidates(graph, toCoords.lat, toCoords.lng);
 
   const hasDoorAlight = toCandidates.some((c) => c.km <= DOOR_ALIGHT_KM && bestAtStop.has(c.stop.id));
   const hasCloseAlight = toCandidates.some((c) => c.km <= CLOSE_ALIGHT_KM && bestAtStop.has(c.stop.id));
@@ -767,9 +788,12 @@ function findRealRoute(originCoords, destCoords, graph = transitGraph, fixedSide
     if (d === undefined) return;
     const walk = walkMinutes(km);
     let walkCost = walk * WALK_PENALTY_FACTOR;
-    if (hasDoorAlight && km > DOOR_ALIGHT_KM) {
+    // Kapıdaki otobüs, 1 km ötedeki metro/metrobüs yürüyüşünü ezmesin.
+    // Ankara'daki kapı cezası yalnız otobüs durakları arasında kalsın.
+    const trunkAlight = stopIsTrunk(stop.id);
+    if (!trunkAlight && hasDoorAlight && km > DOOR_ALIGHT_KM) {
       walkCost += (km - DOOR_ALIGHT_KM) * DOOR_ALIGHT_MIN_PER_KM;
-    } else if (hasCloseAlight && km > CLOSE_ALIGHT_KM) {
+    } else if (!trunkAlight && hasCloseAlight && km > CLOSE_ALIGHT_KM) {
       walkCost += (km - CLOSE_ALIGHT_KM) * EARLY_ALIGHT_MIN_PER_KM;
     }
     const total = d + walkCost;

@@ -187,6 +187,14 @@ function wait(ms) {
   assert(mengenlerRoute.verified, "Mengenler doğrulanamadı");
   assert(mengenlerRoute.durationMin <= 40, "Mecidiyeköy→Mengenler hâlâ uzun: " + mengenlerRoute.durationMin);
 
+  const republika = data.projects.find((p) => p.id === "proj_ortakoy_republika");
+  const mecidiyekoyRepublika = estimate(
+    { name: mecidiyekoy.name, coords: { lat: mecidiyekoy.lat, lng: mecidiyekoy.lng }, stopId: mecidiyekoy.accessStopId },
+    { name: republika.name, coords: { lat: republika.lat, lng: republika.lng }, stopId: republika.accessStopId }
+  );
+  assert(mecidiyekoyRepublika.durationMin <= 30, "Mecidiyeköy→Republika hâlâ dolanıyor: " + mecidiyekoyRepublika.durationMin);
+  assert(mecidiyekoyRepublika.steps.some((step) => /M7/.test(step.line || "")), "Mecidiyeköy→Republika M7 kullanmıyor: " + mecidiyekoyRepublika.steps.map((s) => s.line).join(" | "));
+
   const mecidiyekoyTorium = estimate(
     { name: mecidiyekoy.name, coords: { lat: mecidiyekoy.lat, lng: mecidiyekoy.lng }, stopId: mecidiyekoy.accessStopId },
     { name: torium.name, coords: { lat: torium.lat, lng: torium.lng }, stopId: torium.accessStopId }
