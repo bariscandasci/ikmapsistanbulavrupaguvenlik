@@ -3104,10 +3104,24 @@ function shortGeometryBetween(geometry, a, b) {
   return best;
 }
 
+function graphLine(step) {
+  const id = step && step.lineId;
+  if (!id) return null;
+  if (transitGraph && transitGraph.linesByLocalId.has(id)) {
+    return { graph: transitGraph, line: transitGraph.linesByLocalId.get(id) };
+  }
+  if (transitGraphWithDolmus && transitGraphWithDolmus.linesByLocalId.has(id)) {
+    return { graph: transitGraphWithDolmus, line: transitGraphWithDolmus.linesByLocalId.get(id) };
+  }
+  return null;
+}
+
 function rideShapeLatLngs(step) {
-  if (!step.lineId || !step.fromStopId || !step.toStopId || !transitGraph) return null;
-  const line = transitGraph.linesByLocalId.get(step.lineId);
-  if (!line || !line.stopIds) return null;
+  if (!step.lineId || !step.fromStopId || !step.toStopId) return null;
+  const found = graphLine(step);
+  if (!found || !found.line.stopIds) return null;
+  const line = found.line;
+  const graph = found.graph;
   const ids = line.stopIds;
   const a = ids.indexOf(step.fromStopId);
   const b = ids.indexOf(step.toStopId);
@@ -3126,10 +3140,10 @@ function rideShapeLatLngs(step) {
     pts.push([lat, lng]);
   };
   for (let i = 0; i < ordered.length; i++) {
-    const stop = transitGraph.stopsById.get(ordered[i]);
+    const stop = graph.stopsById.get(ordered[i]);
     if (!stop || typeof stop.lat !== "number") return null;
     if (i > 0 && geo) {
-      const prev = transitGraph.stopsById.get(ordered[i - 1]);
+      const prev = graph.stopsById.get(ordered[i - 1]);
       const piece = shortGeometryBetween(geo, prev, stop);
       if (piece && piece.length > 1) {
         const start = { lat: piece[0][0], lng: piece[0][1] };
@@ -3143,19 +3157,24 @@ function rideShapeLatLngs(step) {
   return pts.length > 1 ? pts : null;
 }
 
-// Yürüyüş bacakları eskiden iki nokta arası DÜZ çizgiyle ("kuş uçuşu")
-// çiziliyordu — kullanıcı haklı olarak "yürüyen kişi binaların üstünden mi
-// atlayacak" diye sordu. transit_network.json'da yaya kaldırım/patika verisi
-// yok, bu yüzden OSM'nin ücretsiz, API anahtarı gerektirmeyen, CORS'u açık
-// (Access-Control-Allow-Origin: *) genel yaya rotalama sunucusu
-// (routing.openstreetmap.de/routed-foot, FOSSGIS tarafından işletiliyor)
-// kullanılıyor. Önce (çizim gecikmesi olmasın diye) her zamanki gibi düz
-// çizgi hemen çizilir; gerçek sokak rotası gelince AYNI polyline/etiket
-// nesnesi setLatLngs/setIcon ile YERİNDE güncellenir (yeniden çizmeye gerek
-// yok). Sonuç ~50 durak/proje çiftine kadar önbelleğe alınır (aynı iki nokta
-// arası tekrar tekrar istenmesin diye); istek başarısız olursa (çevrimdışı,
-// zaman aşımı, sunucu kısıtlaması) sessizce düz çizgide kalınır — bu bir
-// güvenlik ağı, uygulamanın çalışması buna bağımlı değil.
+// transit_network_geometry.json dilimi. Dosyada hat yoksa null — durakları
+// birleştiren düz kiriş "resmi geometri" sayılmaz.
+function officialLineShape(step) {
+  if (!step || !step.lineId) return null;
+  const fromFile = localTransitGeometry && localTransitGeometry[step.lineId];
+  const found = graphLine(step);
+  const inline = found && found.line.geometry && found.line.geometry.length > 1 ? found.line.geometry : null;
+  if ((!fromFile || fromFile.length < 2) && !inline) return null;
+  const shaped = rideShapeLatLngs(step);
+  return shaped && shaped.length > 1 ? shaped : null;
+}
+
+// OSRM varsayılanı overview=simplified olduğu için çizgiyi budayıp
+// köşelerden keser. overview=full geometri sadeleştirmesini kapatır.
+const OSRM_GEOMETRY_QUERY = "overview=full&geometries=geojson";
+
+// Yürüyüş (mode hub) yalnız routed-foot. Otobüs ve minibüs routed-car.
+// İstek başarısız olursa null döner; çağıran düz kuş uçuşu çizmez.
 function fetchOsrmGeometry(profileUrlSegment, cache, a, b) {
   const key = `${a.lat.toFixed(5)},${a.lng.toFixed(5)}|${b.lat.toFixed(5)},${b.lng.toFixed(5)}`;
   if (cache.has(key)) return cache.get(key);
@@ -3163,7 +3182,7 @@ function fetchOsrmGeometry(profileUrlSegment, cache, a, b) {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 6000);
-      const url = `https://routing.openstreetmap.de/${profileUrlSegment}/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson`;
+      const url = `https://routing.openstreetmap.de/${profileUrlSegment}/${a.lng},${a.lat};${b.lng},${b.lat}?${OSRM_GEOMETRY_QUERY}`;
       const res = await fetch(url, { signal: controller.signal });
       clearTimeout(timeout);
       if (!res.ok) return null;
@@ -3183,14 +3202,8 @@ const walkGeometryCache = new Map();
 function fetchWalkGeometry(a, b) {
   return fetchOsrmGeometry("routed-foot/route/v1/foot", walkGeometryCache, a, b);
 }
-// Gerçek geometrisi olmayan/güvenilmez bulunan otobüs-metro bacakları eskiden
-// iki durak arası düz "kuş uçuşu" çizgiyle (binaların üstünden) tahmin
-// ediliyordu — kullanıcı raporu, 207 hattının fallback'e düşen bacağı için.
-// Yürüyüşteki AYNI mantık burada da uygulanıyor, sadece araç profili
-// (routed-car) ile: aracın gerçekte hangi sokaktan gideceğini bilmiyoruz,
-// ama en azından caddeleri takip eden MAKUL bir tahmin, binaları kesen düz
-// bir çizgiden çok daha dürüst. Gösterilen süre/etiket buna bağlı DEĞİL
-// (zaten kuş uçuşu mesafeye göre hesaplanıyor), sadece çizginin şekli düzelir.
+// İki durak arası araç yolu. Yürüyüş bunu çağırmaz (routed-foot ayrıdır).
+// Sonuç yoksa null; çizim düz kirişe düşmez, resmi geometri durur.
 const drivingGeometryCache = new Map();
 function fetchDrivingGeometry(a, b) {
   return fetchOsrmGeometry("routed-car/route/v1/driving", drivingGeometryCache, a, b);
@@ -3202,17 +3215,17 @@ function fetchDrivingGeometry(a, b) {
 // üstüne yatırır. Burada binişten inişe kadar duraklar ara nokta verilip
 // araç rotası isteniyor; süre değişmez, sadece çizgi caddeyi takip eder.
 function riddenStops(step) {
-  if (!step || !step.lineId || !step.fromStopId || !step.toStopId || !transitGraph) return null;
-  const line = transitGraph.linesByLocalId.get(step.lineId);
-  if (!line || !line.stopIds) return null;
-  const ids = line.stopIds;
+  if (!step || !step.lineId || !step.fromStopId || !step.toStopId) return null;
+  const found = graphLine(step);
+  if (!found || !found.line.stopIds) return null;
+  const ids = found.line.stopIds;
   const a = ids.indexOf(step.fromStopId);
   const b = ids.indexOf(step.toStopId);
   if (a < 0 || b < 0 || a === b) return null;
   const out = [];
   const dir = a < b ? 1 : -1;
   for (let i = a; dir > 0 ? i <= b : i >= b; i += dir) {
-    const stop = transitGraph.stopsById.get(ids[i]);
+    const stop = found.graph.stopsById.get(ids[i]);
     if (!stop || typeof stop.lat !== "number") return null;
     const prev = out[out.length - 1];
     if (prev && haversineKm(prev, stop) < 0.03) continue;
@@ -3238,7 +3251,7 @@ function fetchDrivingThrough(stops) {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 8000);
-      const url = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${path}?overview=full&geometries=geojson`;
+      const url = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${path}?${OSRM_GEOMETRY_QUERY}`;
       const res = await fetch(url, { signal: controller.signal });
       clearTimeout(timeout);
       if (!res.ok) return null;
@@ -3307,15 +3320,10 @@ function drawRoute(originCoords, row, bucket, destCoordsOverride) {
   const geometryOfStep = (s) => {
     const line = lineOfStep(s);
     if (line && line.geometry && line.geometry.length > 1) return line.geometry;
-    if (s.lineId && transitGraph && transitGraph.linesByLocalId.has(s.lineId)) {
-      const graphLine = transitGraph.linesByLocalId.get(s.lineId);
-      // Dolmuş hatları gibi kendi geometrisini doğrudan taşıyan graf hatları
-      // (ayrı bir localTransitGeometry dosyasına ihtiyaç duymadan).
-      if (graphLine.geometry && graphLine.geometry.length > 1) return graphLine.geometry;
-      if (localTransitGeometry) {
-        const geo = localTransitGeometry[s.lineId];
-        if (geo && geo.length > 1) return geo;
-      }
+    const found = graphLine(s);
+    if (found && found.line.geometry && found.line.geometry.length > 1) return found.line.geometry;
+    if (s.lineId && localTransitGeometry && localTransitGeometry[s.lineId] && localTransitGeometry[s.lineId].length > 1) {
+      return localTransitGeometry[s.lineId];
     }
     return null;
   };
@@ -3340,7 +3348,7 @@ function drawRoute(originCoords, row, bucket, destCoordsOverride) {
     const gA = geometryOfStep(steps[i]);
     const gB = geometryOfStep(steps[i + 1]);
     const boundaryStopId = steps[i].toStopId || steps[i + 1].fromStopId;
-    const boundaryStop = boundaryStopId && transitGraph && transitGraph.stopsById.get(boundaryStopId);
+    const boundaryStop = boundaryStopId ? stopRecord(boundaryStopId) : null;
     // Aktarma noktası, iki hattın geometrisinin tesadüfen en yakın olduğu yer
     // değil, rotanın gerçekten indiği duraktır. Tam hat geometrisi üzerinden
     // "en yakın çift" döngülü hatlarda aktarmayı kilometrelerce uzağa atıyordu.
@@ -3360,8 +3368,6 @@ function drawRoute(originCoords, row, bucket, destCoordsOverride) {
     const endA = anchors[i + 1];
     const isWalk = step.mode === "hub";
     const tooltipText = `${MODE_ICON[step.mode] || ""} ${step.line}`;
-    let walkPolyToUpgrade = null; // yürüyüş bacağıysa: gerçek sokak rotası gelince setLatLngs ile güncellenecek polyline
-    let fallbackPolyToUpgrade = null; // güvenilmez/geometrisiz araç bacağıysa: gerçek araç rotası gelince güncellenecek polyline
 
     // kind: "solid" (gerçek güzergah, halo'lu) | "walk" (yürüyüş, noktalı mavi,
     // halo'suz) | "fallback" (bu bacak için gerçek geometri yok, modun kendi
@@ -3383,6 +3389,7 @@ function drawRoute(originCoords, row, bucket, destCoordsOverride) {
           color: "#ffffff",
           weight: 7,
           opacity: 0.9,
+          smoothFactor: 1,
           lineJoin: "round",
           lineCap: "round",
           interactive: false,
@@ -3399,6 +3406,7 @@ function drawRoute(originCoords, row, bucket, destCoordsOverride) {
         weight: 5,
         opacity: 1,
         dashArray: kind === "walk" ? "0 10" : kind === "fallback" ? "6 6" : null,
+        smoothFactor: 1,
         lineJoin: "round",
         lineCap: "round",
       }).addTo(routesLayer);
@@ -3409,61 +3417,40 @@ function drawRoute(originCoords, row, bucket, destCoordsOverride) {
     };
 
     const rail = step.mode === "metro" || step.mode === "ankaray" || step.mode === "tren";
-    const along = !isWalk && !isUnreliableLineSegment(step) ? rideShapeLatLngs(step) : null;
-    const jumpLimit = rail ? 4 : MAX_GEOMETRY_JUMP_KM;
-    const shapeTrusted = along && along.length > 1 && maxJumpKm(along) <= jumpLimit;
-
-    let vehiclePoly = null;
-    if (shapeTrusted) {
-      // Durak sırasına oturan parça: katı çizgi. Metro/Ankaray'da OSM ray
-      // geometrisi olmadığı için bu, istasyonları sırayla birleştirir —
-      // caddeden giden bir araç rotası değil.
-      vehiclePoly = drawSegment(along, "solid");
-      const segStart = { lat: along[0][0], lng: along[0][1] };
-      const segEnd = { lat: along[along.length - 1][0], lng: along[along.length - 1][1] };
-      if (haversineKm(startA, segStart) > REAL_GEOMETRY_CONNECT_LIMIT_KM) {
-        drawSegment([[startA.lat, startA.lng], [segStart.lat, segStart.lng]], "fallback");
+    const roadStyle = { dashArray: null, color: TRANSIT_LINE_COLOR, weight: 5, opacity: 1, smoothFactor: 1, lineJoin: "round", lineCap: "round" };
+    const applyRoad = (poly, coords) => {
+      poly.setLatLngs(coords);
+      poly.setStyle(roadStyle);
+      if (poly._routeHalo) {
+        poly._routeHalo.setLatLngs(coords);
+        poly._routeHalo.setStyle({ smoothFactor: 1, lineJoin: "round", lineCap: "round" });
       }
-      if (haversineKm(endA, segEnd) > REAL_GEOMETRY_CONNECT_LIMIT_KM) {
-        drawSegment([[segEnd.lat, segEnd.lng], [endA.lat, endA.lng]], "fallback");
-      }
-    } else {
-      // Güvenilir durak-sıralı şekil yok (kopuk geometri, elle işaretli
-      // bozuk bacak, ya da yürüyüş). Düz çizgi yer tutucu; yürüyüş ve
-      // otobüs bacakları sokak rotasına yükseltilir. Metro/Ankaray/tren
-      // asla araba rotasıyla çizilmez — ray caddenin üzerinden gitmez.
-      const poly = drawSegment([[startA.lat, startA.lng], [endA.lat, endA.lng]], isWalk ? "walk" : "fallback");
-      if (isWalk) walkPolyToUpgrade = poly;
-      else if (!rail) fallbackPolyToUpgrade = poly;
-    }
+    };
 
-    // Düz "kuş uçuşu" çizgi sadece anlık bir yer tutucu — kullanıcı binaların
-    // üzerinden mi yürüyecek diye haklı olarak sorabilir. Gerçek, sokakları
-    // takip eden yaya rotası geldiğinde AYNI polyline yerinde güncellenir
-    // (bkz. fetchWalkGeometry'nin başındaki not).
-    if (isWalk && walkPolyToUpgrade) {
+    if (isWalk) {
+      // Yaya adımı araç profiline girmez. Sokak yolu gelmezse düz kiriş çizilmez.
+      allPoints.push([startA.lat, startA.lng], [endA.lat, endA.lng]);
       fetchWalkGeometry(startA, endA).then((coords) => {
-        if (myToken !== routeDrawToken || !coords) return;
-        walkPolyToUpgrade.setLatLngs(coords);
+        if (myToken !== routeDrawToken || !coords || coords.length < 2) return;
+        drawSegment(coords, "walk");
       });
-    }
-    // Otobüs ve metrobüs: durak sırası ara nokta olarak araca sorulur, çizgi
-    // caddeyi/otoyolu takip eder. Metro rayda kalır. Durak dizisi yoksa eski
-    // iki nokta arası araç rotası yedek olarak durur.
-    const viaStops = !isWalk && !rail ? riddenStops(step) : null;
-    const linePoly = !isWalk && !rail ? vehiclePoly || fallbackPolyToUpgrade : null;
-    if (linePoly && viaStops) {
-      fetchDrivingThrough(viaStops).then((coords) => {
-        if (myToken !== routeDrawToken || !coords) return;
-        linePoly.setLatLngs(coords);
-        linePoly.setStyle({ dashArray: null, color: TRANSIT_LINE_COLOR, weight: 5, opacity: 1 });
-        if (linePoly._routeHalo) linePoly._routeHalo.setLatLngs(coords);
-      });
-    } else if (!isWalk && fallbackPolyToUpgrade) {
-      fetchDrivingGeometry(startA, endA).then((coords) => {
-        if (myToken !== routeDrawToken || !coords) return;
-        fallbackPolyToUpgrade.setLatLngs(coords);
-        if (fallbackPolyToUpgrade._routeHalo) fallbackPolyToUpgrade._routeHalo.setLatLngs(coords);
+    } else if (rail) {
+      const along = !isUnreliableLineSegment(step) ? rideShapeLatLngs(step) : null;
+      if (along && along.length > 1 && maxJumpKm(along) <= 4) drawSegment(along, "solid");
+      else allPoints.push([startA.lat, startA.lng], [endA.lat, endA.lng]);
+    } else {
+      // Otobüs ve minibüs: routed-car. OSRM yoksa transit_network_geometry.json kalır.
+      const official = !isUnreliableLineSegment(step) ? officialLineShape(step) : null;
+      let poly = official && official.length > 1 ? drawSegment(official, "solid") : null;
+      if (!poly) allPoints.push([startA.lat, startA.lng], [endA.lat, endA.lng]);
+      const viaStops = riddenStops(step);
+      const pending = viaStops && viaStops.length >= 2
+        ? fetchDrivingThrough(viaStops)
+        : fetchDrivingGeometry(startA, endA);
+      pending.then((coords) => {
+        if (myToken !== routeDrawToken || !coords || coords.length < 2) return;
+        if (!poly) poly = drawSegment(coords, "solid");
+        else applyRoad(poly, coords);
       });
     }
   });
