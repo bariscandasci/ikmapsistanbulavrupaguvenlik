@@ -637,7 +637,7 @@ function routeAccessCandidates(graph, lat, lng) {
  * göre yapılır ama GERÇEK süre (ceza hariç) ayrıca realMinutes'ta tutulur —
  * kullanıcıya cezalı/uydurma bir süre asla gösterilmez.
  */
-function runDijkstra(graph, sources, transferPenaltyMin = 0, originCoords = null) {
+function runDijkstra(graph, sources, transferPenaltyMin = 0, originCoords = null, blockedLineIds = null) {
   const NONE = " "; // henüz hiçbir hatta binilmemiş/sadece yürünüyor durumu
   const dist = new Map(); // "stopId|lineKey" -> sıralama için kullanılan (cezalı olabilir) dakika
   const realDist = new Map(); // "stopId|lineKey" -> GERÇEK dakika (ceza hariç)
@@ -677,6 +677,7 @@ function runDijkstra(graph, sources, transferPenaltyMin = 0, originCoords = null
     const curRealMinutes = realDist.get(curKey);
     const edges = graph.adjacency.get(cur.stopId) || [];
     edges.forEach((e) => {
+      if (blockedLineIds && e.lineId && blockedLineIds.has(e.lineId)) return;
       // Yürüme kenarları durumu HER ZAMAN nötrler (NONE) — hangi hatla
       // gelindiği bilgisini taşımaya devam etseydi, yoğun aktarma
       // bölgelerinde (Kızılay gibi onlarca hattın kesiştiği duraklar)
@@ -734,7 +735,8 @@ function runDijkstra(graph, sources, transferPenaltyMin = 0, originCoords = null
 // kılıp (thrashing) her ikisini de her seferinde sıfırdan koştururdu.
 const dijkstraCacheByGraph = new Map();
 
-function getDijkstraFrom(coords, graph = transitGraph, transferPenaltyMin = 0, feedOrigin = null) {
+function getDijkstraFrom(coords, graph = transitGraph, transferPenaltyMin = 0, feedOrigin = null, blockedLineIds = null) {
+  const blocked = blockedLineIds && blockedLineIds.size ? blockedLineIds : null;
   const key = coords.lat.toFixed(4) + "," + coords.lng.toFixed(4);
   const variant = (transferPenaltyMin || 0) + (feedOrigin ? ":feed" : "");
   let variants = dijkstraCacheByGraph.get(graph);
@@ -742,12 +744,14 @@ function getDijkstraFrom(coords, graph = transitGraph, transferPenaltyMin = 0, f
     variants = new Map();
     dijkstraCacheByGraph.set(graph, variants);
   }
-  const cached = variants.get(variant);
-  if (cached && cached.key === key) return cached.result;
+  if (!blocked) {
+    const cached = variants.get(variant);
+    if (cached && cached.key === key) return cached.result;
+  }
   const sources = routeAccessCandidates(graph, coords.lat, coords.lng)
     .map(({ stop, km }) => ({ stopId: stop.id, startMinutes: walkMinutes(km) * WALK_PENALTY_FACTOR, realStart: walkMinutes(km) }));
-  const result = runDijkstra(graph, sources, transferPenaltyMin, feedOrigin);
-  variants.set(variant, { key, result });
+  const result = runDijkstra(graph, sources, transferPenaltyMin, feedOrigin, blocked);
+  if (!blocked) variants.set(variant, { key, result });
   return result;
 }
 
@@ -768,7 +772,7 @@ function getDijkstraFrom(coords, graph = transitGraph, transferPenaltyMin = 0, f
  * Dönüş: { totalMinutes, pathStopIds, edgeAtStop } ya da her iki nokta
  * arasında (1.2km içinde hiç durak yoksa) null.
  */
-function findRealRoute(originCoords, destCoords, graph = transitGraph, fixedSide = "origin", transferPenaltyMin = 0) {
+function findRealRoute(originCoords, destCoords, graph = transitGraph, fixedSide = "origin", transferPenaltyMin = 0, blockedLineIds = null) {
   if (!graph) return null;
   const fromCoords = fixedSide === "dest" ? destCoords : originCoords;
   const toCoords = fixedSide === "dest" ? originCoords : destCoords;
@@ -776,7 +780,8 @@ function findRealRoute(originCoords, destCoords, graph = transitGraph, fixedSide
     fromCoords,
     graph,
     transferPenaltyMin,
-    fixedSide === "dest" ? null : originCoords
+    fixedSide === "dest" ? null : originCoords,
+    blockedLineIds
   );
   const toCandidates = routeAccessCandidates(graph, toCoords.lat, toCoords.lng);
 
@@ -1043,6 +1048,161 @@ function buildMinTransfersAlternative(origin, dest, originLabel, destLabel, prim
     verified,
     extraMin: Math.max(roundTo5(durationMin - primaryDurationMin), 0),
   };
+}
+
+// Tıklanınca hesaplanan seçenekler. Sıralama (estimateTransit) bunları
+// çalıştırmaz; aksi halde her proje için ek graf taraması listeyi yavaşlatır.
+// En hızlı resmi rota durur. Üstüne: gerçekten daha az aktarma, minibüs
+// grafında farklı bir hat, ve ilk rotanın hatları kapatılarak bulunan başka
+// koridor. En hızlıdan 35 dk'dan yavaş olanlar listeye girmez.
+const ROUTE_OPTION_MAX_EXTRA_MIN = 35;
+
+function rideKey(steps) {
+  return (steps || []).filter((s) => s.lineId).map((s) => s.lineId).join(">");
+}
+
+function stepsFromFoundRoute(route, graph, originCoords, destCoords, originLabel, destLabel) {
+  const steps = pathToSteps(route.pathStopIds, route.edgeAtStop, graph);
+  const firstStop = graph.stopsById.get(route.pathStopIds[0]);
+  const lastStop = graph.stopsById.get(route.pathStopIds[route.pathStopIds.length - 1]);
+  if (!firstStop || !lastStop) return null;
+  const firstWalkKm = haversineKm(originCoords, { lat: firstStop.lat, lng: firstStop.lng });
+  const lastWalkKm = haversineKm({ lat: lastStop.lat, lng: lastStop.lng }, destCoords);
+  if (lastWalkKm > WALK_STEP_MIN_KM) {
+    steps.push({ mode: "hub", line: "Yürüyüş", from: lastStop.name, to: destLabel, verified: true, lineId: null });
+  }
+  if (firstWalkKm > WALK_STEP_MIN_KM) {
+    steps.unshift({ mode: "hub", line: "Yürüyüş", from: originLabel, to: firstStop.name, verified: true, lineId: null });
+  }
+  const rideSteps = steps.filter((s) => s.lineId);
+  const durationMin = Math.max(roundTo5(route.totalMinutes), 5);
+  return {
+    durationMin,
+    transfers: Math.max(rideSteps.length - 1, 0),
+    routeSummary: `${rideSteps.length ? rideSteps.map((s) => s.line).join(" + ") : "Yürüyüş"} (${destLabel} civarı)`,
+    steps,
+    verified: steps.every((s) => s.verified),
+    unofficial: steps.some((s) => s.mode === "dolmus"),
+  };
+}
+
+function endpointLabels(estimate) {
+  const steps = estimate.steps || [];
+  const originLabel = steps.length && steps[0].line === "Yürüyüş" ? steps[0].from : "Başlangıç";
+  const last = steps[steps.length - 1];
+  const destLabel = last && last.line === "Yürüyüş"
+    ? last.to
+    : (estimate.project && estimate.project.name) || (estimate.district && estimate.district.name) || "Hedef";
+  return { originLabel, destLabel };
+}
+
+function buildClickRouteOptions(originCoords, destCoords, estimate) {
+  const options = [];
+  const { originLabel, destLabel } = endpointLabels(estimate);
+  const push = (opt) => {
+    if (!opt || !opt.steps || !opt.steps.length) return;
+    const key = rideKey(opt.steps);
+    if (options.some((existing) => rideKey(existing.steps) === key)) return;
+    if (options.length && opt.durationMin > options[0].durationMin + ROUTE_OPTION_MAX_EXTRA_MIN) return;
+    options.push(opt);
+  };
+
+  push({
+    kind: "fastest",
+    label: "En hızlı",
+    durationMin: estimate.durationMin,
+    transfers: estimate.transfers,
+    routeSummary: estimate.routeSummary,
+    steps: estimate.steps,
+    verified: estimate.verified,
+    unofficial: (estimate.steps || []).some((s) => s.mode === "dolmus"),
+  });
+
+  if (estimate.minTransfersAlternative) {
+    const alt = estimate.minTransfersAlternative;
+    push({
+      kind: "fewest",
+      label: "Daha az aktarma",
+      durationMin: alt.durationMin,
+      transfers: alt.transfers,
+      routeSummary: alt.routeSummary,
+      steps: alt.steps,
+      verified: alt.verified,
+      unofficial: (alt.steps || []).some((s) => s.mode === "dolmus"),
+    });
+  }
+
+  if (estimate.dolmusAlternative) {
+    const alt = estimate.dolmusAlternative;
+    push({
+      kind: "minibus",
+      label: "Minibüs dahil",
+      durationMin: alt.durationMin,
+      transfers: alt.transfers,
+      routeSummary: alt.routeSummary,
+      steps: alt.steps,
+      verified: (alt.steps || []).every((s) => s.verified !== false),
+      unofficial: true,
+    });
+  }
+
+  if (transitGraphWithDolmus) {
+    const altRoute = findRealRoute(originCoords, destCoords, transitGraphWithDolmus, "origin", PRIMARY_TRANSFER_PENALTY_MIN);
+    if (altRoute) {
+      const opt = stepsFromFoundRoute(altRoute, transitGraphWithDolmus, originCoords, destCoords, originLabel, destLabel);
+      if (opt && opt.unofficial) {
+        opt.kind = "minibus";
+        opt.label = "Minibüs dahil";
+        push(opt);
+      }
+    }
+  }
+
+  const primaryIds = (estimate.steps || []).filter((s) => s.lineId).map((s) => s.lineId);
+  // En hızlı yol minibüs kullanmıyorsa, aynı cezayla minibüs grafında ilk
+  // rotanın hatlarını kapat. A26 ve diğer Haziran 2025 güzergahları, ancak
+  // gerçekten biniliyorsa ve en hızlıdan 35 dk içindeyse seçenek olur.
+  if (transitGraphWithDolmus && primaryIds.length && !options.some((opt) => opt.unofficial)) {
+    const blockedMinibus = findRealRoute(
+      originCoords,
+      destCoords,
+      transitGraphWithDolmus,
+      "origin",
+      PRIMARY_TRANSFER_PENALTY_MIN,
+      new Set(primaryIds)
+    );
+    if (blockedMinibus) {
+      const opt = stepsFromFoundRoute(blockedMinibus, transitGraphWithDolmus, originCoords, destCoords, originLabel, destLabel);
+      if (opt && opt.unofficial) {
+        opt.kind = "minibus";
+        opt.label = "Minibüs dahil";
+        push(opt);
+      }
+    }
+  }
+
+  const blockedRoute = (ids) => {
+    if (!ids.length || !transitGraph) return null;
+    const altRoute = findRealRoute(originCoords, destCoords, transitGraph, "origin", PRIMARY_TRANSFER_PENALTY_MIN, new Set(ids));
+    if (!altRoute) return null;
+    const opt = stepsFromFoundRoute(altRoute, transitGraph, originCoords, destCoords, originLabel, destLabel);
+    if (!opt) return null;
+    opt.kind = "corridor";
+    opt.label = "Başka koridor";
+    return opt;
+  };
+  const blockedAll = blockedRoute(primaryIds);
+  const fastestMin = options.length ? options[0].durationMin : 0;
+  if (blockedAll && blockedAll.durationMin <= fastestMin + ROUTE_OPTION_MAX_EXTRA_MIN) {
+    push(blockedAll);
+  } else if (primaryIds.length > 1) {
+    push(blockedRoute(primaryIds.slice(0, 1)));
+  }
+
+  if (options.length && options.some((opt, index) => index > 0 && opt.durationMin < options[0].durationMin)) {
+    options[0].label = "Resmi hat";
+  }
+  return options.slice(0, 4);
 }
 
 // ---------------------------------------------------------------------------
@@ -1949,9 +2109,8 @@ const routeDetailTitle = document.getElementById("routeDetailTitle");
 const routeDetailSteps = document.getElementById("routeDetailSteps");
 const routeDetailWarning = document.getElementById("routeDetailWarning");
 const routeDolmusAlt = document.getElementById("routeDolmusAlt");
-const routeDetailVariantToggle = document.getElementById("routeDetailVariantToggle");
-const routeVariantFastestBtn = document.getElementById("routeVariantFastestBtn");
-const routeVariantFewestBtn = document.getElementById("routeVariantFewestBtn");
+const routeOptions = document.getElementById("routeOptions");
+const routeSchedule = document.getElementById("routeSchedule");
 const addressInput = document.getElementById("addressInput");
 const addressSearchBtn = document.getElementById("addressSearchBtn");
 const addressStatus = document.getElementById("addressStatus");
@@ -2868,6 +3027,7 @@ function drawRoute(originCoords, row, bucket, destCoordsOverride) {
   routeDrawToken += 1;
   const myToken = routeDrawToken;
   const destCoords = destCoordsOverride || { lat: row.project.lat, lng: row.project.lng };
+  currentRouteDraw = { originCoords, destCoords, bucket, row };
   const steps = row.steps || [];
   if (steps.length === 0) return;
 
@@ -3102,55 +3262,180 @@ function drawRoute(originCoords, row, bucket, destCoordsOverride) {
   }
 }
 
-// showRouteResult'a en son verilen estimate — "En Hızlı"/"En Az Aktarmalı"
-// varyant butonları yeniden arama yapmadan sadece bunun arasında geçiş yapar.
+// Seçili kartın çizim bağlamı. Seçenek butonu aynı uçlarla haritayı yeniden çizer.
+let currentRouteDraw = null;
 let currentRouteEstimate = null;
+let currentRouteOptions = [];
+let routeOptionToken = 0;
+let routeScheduleToken = 0;
 
-/** routeDetailTitle/Steps/Warning'i estimate'in kendisiyle (En Hızlı) ya da minTransfersAlternative'ıyla (En Az Aktarmalı) doldurur. */
-function renderRouteVariant(estimate, useMinTransfers) {
-  const variant = useMinTransfers ? estimate.minTransfersAlternative : estimate;
-  const extra = useMinTransfers && variant.extraMin ? ` (+${variant.extraMin} dk)` : "";
-  routeDetailTitle.innerHTML = `Rota Detayı · ${variant.transfers} aktarma · ~${variant.durationMin} dk${extra}`;
-  routeDetailSteps.innerHTML = renderRouteSteps(variant.steps);
-  routeDetailWarning.classList.toggle("hidden", variant.verified);
-  routeVariantFastestBtn.classList.toggle("mode-btn-active", !useMinTransfers);
-  routeVariantFewestBtn.classList.toggle("mode-btn-active", useMinTransfers);
+function renderRouteOptions(options, activeIndex) {
+  currentRouteOptions = options;
+  if (!routeOptions) return;
+  const baseMin = options[0] ? options[0].durationMin : 0;
+  routeOptions.innerHTML = options.map((opt, i) => {
+    let extra = "";
+    if (i > 0 && opt.durationMin > baseMin) extra = ` · +${opt.durationMin - baseMin} dk`;
+    else if (opt.durationMin < baseMin) extra = ` · ${baseMin - opt.durationMin} dk daha kısa`;
+    return `<button type="button" class="route-option${i === activeIndex ? " route-option-active" : ""}" data-option="${i}">
+      <div class="font-semibold text-slate-800">${escapeHtml(opt.label)} · ~${opt.durationMin} dk · ${opt.transfers} aktarma${extra}</div>
+      <div class="text-[11px] text-slate-500 truncate">${escapeHtml(opt.routeSummary || "")}</div>
+    </button>`;
+  }).join("");
+  routeOptions.querySelectorAll("button").forEach((btn) => {
+    btn.addEventListener("click", () => selectRouteOption(Number(btn.dataset.option), true));
+  });
 }
 
-routeVariantFastestBtn.addEventListener("click", () => {
-  if (currentRouteEstimate) renderRouteVariant(currentRouteEstimate, false);
-});
-routeVariantFewestBtn.addEventListener("click", () => {
-  if (currentRouteEstimate) renderRouteVariant(currentRouteEstimate, true);
-});
+function renderOptionDisclaimer(opt) {
+  if (!routeDolmusAlt) return;
+  if (!opt || !opt.unofficial) {
+    routeDolmusAlt.classList.add("hidden");
+    routeDolmusAlt.innerHTML = "";
+    return;
+  }
+  routeDolmusAlt.classList.remove("hidden");
+  routeDolmusAlt.innerHTML = `<div class="text-[11px] text-amber-800">Minibüs güzergahı İBB Açık Veri dosyasından (5 Haziran 2025). Kalkış sıklığı bu planda yok; adaya kesin sefer saati gibi aktarılmamalı.</div>`;
+}
+
+function iettRides(steps) {
+  const out = [];
+  (steps || []).forEach((step) => {
+    if (!step.lineId || !String(step.lineId).startsWith("iett_") || !transitGraph) return;
+    const line = transitGraph.linesByLocalId.get(step.lineId);
+    if (!line || !line.hatNo) return;
+    if (out.some((ride) => ride.hat === line.hatNo)) return;
+    if (out.length >= 3) return;
+    const stopCode = step.fromStopId && String(step.fromStopId).startsWith("iett_") ? String(step.fromStopId).slice(5) : "";
+    out.push({
+      hat: line.hatNo,
+      stopCode,
+      fallbackWaitMin: boardingWaitMin(lineHeadwayMin(line)),
+    });
+  });
+  return out;
+}
+
+function renderOneSchedule(ride, schedule, live) {
+  const hat = escapeHtml(ride.hat);
+  if (!schedule || !schedule.ok) {
+    return `<div class="mb-1"><b>${hat}</b> · İETT planı alınamadı. Bekleme tahmini ~${formatWaitMin(ride.fallbackWaitMin)} dk (sefer aralığı / 2).</div>`;
+  }
+  const dirs = (schedule.directions || []).map((dir) => {
+    const name = dir.yon === "D" ? "Dönüş" : dir.yon === "G" ? "Gidiş" : "Kalkış";
+    const times = (dir.times || []).map((time) => escapeHtml(time)).join(" · ");
+    return times ? `${name}: ${times}` : "";
+  }).filter(Boolean);
+  let liveLine = "";
+  if (live && live.ok && typeof live.count === "number") {
+    const near = live.atStop ? ` Biniş durağı koduna yakın ${live.atStop} araç var.` : "";
+    liveLine = `<div>Canlı konum: hatta ${live.count} araç görünüyor.${escapeHtml(near)} Bu, durağınıza kalan dakika değildir.</div>`;
+  } else if (live && live.ok === false) {
+    liveLine = `<div>Canlı hat konumu şu an gelmiyor.</div>`;
+  }
+  const times = dirs.length ? `<div>${dirs.join("<br>")}</div>` : `<div>Bugün bu hat için kalan planlı kalkış yok.</div>`;
+  return `<div class="mb-1.5"><b>${hat}</b> · ana durak kalkışı (İETT planı, ${escapeHtml(schedule.dayLabel || "bugün")})${times}${liveLine}</div>`;
+}
+
+function showRouteSchedule(option) {
+  if (!routeSchedule) return;
+  const token = ++routeScheduleToken;
+  const rides = iettRides(option && option.steps);
+  routeSchedule.classList.remove("hidden");
+  if (!rides.length) {
+    const steps = (option && option.steps) || [];
+    const hasMinibus = steps.some((s) => s.mode === "dolmus" || (s.lineId && String(s.lineId).startsWith("mbs_")));
+    const hasRail = steps.some((s) => s.mode === "metro" || s.mode === "tren" || s.mode === "ankaray");
+    if (hasMinibus && !hasRail) {
+      routeSchedule.textContent = "Minibüs hatlarının kalkış saati İETT planında yok. Bekleme, sefer aralığının yarısı olarak tahmin edilir.";
+    } else if (hasRail) {
+      routeSchedule.textContent = "Metro ve Marmaray kalkışları İETT otobüs planında yok. Bekleme, sefer aralığının yarısı olarak tahmin edilir.";
+    } else {
+      routeSchedule.textContent = "Bu seçenek yürüyüş. Kalkış saati yok.";
+    }
+    return;
+  }
+  const minibusNote = (option.steps || []).some((step) => step.mode === "dolmus" || (step.lineId && String(step.lineId).startsWith("mbs_")))
+    ? "Minibüs adımının kalkış saati İETT planında yok. "
+    : "";
+  routeSchedule.textContent = "İETT kalkış saatleri sorgulanıyor…";
+  Promise.all(rides.map((ride, index) => {
+    const scheduleUrl = "/api/iett-schedule?hat=" + encodeURIComponent(ride.hat);
+    const liveUrl = index === 0
+      ? "/api/iett-live?hat=" + encodeURIComponent(ride.hat) + (ride.stopCode ? "&durak=" + encodeURIComponent(ride.stopCode) : "")
+      : null;
+    return Promise.all([
+      fetch(scheduleUrl).then((res) => res.json()).catch(() => ({ ok: false })),
+      liveUrl ? fetch(liveUrl).then((res) => res.json()).catch(() => ({ ok: false })) : Promise.resolve(null),
+    ]).then(([schedule, live]) => ({ ride, schedule, live }));
+  })).then((rows) => {
+    if (token !== routeScheduleToken) return;
+    const note = minibusNote ? `<div>${escapeHtml(minibusNote)}</div>` : "";
+    routeSchedule.innerHTML = note + rows.map(({ ride, schedule, live }) => renderOneSchedule(ride, schedule, live)).join("");
+  });
+}
+
+function selectRouteOption(index, redraw) {
+  const opt = currentRouteOptions[index];
+  if (!opt) return;
+  if (routeOptions) {
+    routeOptions.querySelectorAll(".route-option").forEach((el, i) => {
+      el.classList.toggle("route-option-active", i === index);
+    });
+  }
+  routeDetailTitle.textContent = `Rota Detayı · ${opt.label} · ${opt.transfers} aktarma · ~${opt.durationMin} dk`;
+  routeDetailSteps.innerHTML = renderRouteSteps(opt.steps);
+  routeDetailWarning.classList.toggle("hidden", opt.verified !== false);
+  renderOptionDisclaimer(opt);
+  showRouteSchedule(opt);
+  if (!redraw || !currentRouteDraw) return;
+  const draw = currentRouteDraw;
+  drawRoute(
+    draw.originCoords,
+    {
+      ...draw.row,
+      steps: opt.steps,
+      durationMin: opt.durationMin,
+      transfers: opt.transfers,
+      verified: opt.verified,
+    },
+    draw.bucket,
+    draw.destCoords
+  );
+}
 
 function showRouteResult(estimate) {
   currentRouteEstimate = estimate;
-  // "En Az Aktarmalı" butonu SADECE gerçekten farklı (daha az aktarmalı) bir
-  // seçenek varsa gösterilir — yoksa iki sekme de aynı rotayı gösterirdi.
-  routeDetailVariantToggle.classList.toggle("hidden", !estimate.minTransfersAlternative);
-  renderRouteVariant(estimate, false);
-
-  const alt = estimate.dolmusAlternative;
-  routeDolmusAlt.classList.toggle("hidden", !alt);
-  if (alt) {
-    routeDolmusAlt.innerHTML = `
-      <div class="text-[11px] font-semibold text-amber-700 uppercase tracking-wide mb-1.5">
-        🚐 Dolmuşla alternatif · ~${alt.durationMin} dk (${alt.savingMin} dk daha hızlı)
-      </div>
-      <div class="text-[10px] text-slate-400 mb-1.5">
-        Gayriresmi/kooperatif işletmeciler tarafından çalıştırılır, EGO'ya kayıtlı değildir — sefer sıklığı/güzergah İK tarafından adaya kesin bilgi gibi aktarılmamalıdır.
-      </div>
-      ${renderRouteSteps(alt.steps)}`;
-  } else {
-    routeDolmusAlt.innerHTML = "";
+  const token = ++routeOptionToken;
+  const primary = {
+    kind: "fastest",
+    label: "En hızlı",
+    durationMin: estimate.durationMin,
+    transfers: estimate.transfers,
+    routeSummary: estimate.routeSummary,
+    steps: estimate.steps,
+    verified: estimate.verified,
+    unofficial: (estimate.steps || []).some((s) => s.mode === "dolmus"),
+  };
+  renderRouteOptions([primary], 0);
+  selectRouteOption(0, false);
+  const draw = currentRouteDraw;
+  if (draw && transitGraph) {
+    if (routeOptions) {
+      const note = document.createElement("div");
+      note.className = "text-[10px] text-slate-400 px-0.5";
+      note.textContent = "Diğer seçenekler hesaplanıyor…";
+      routeOptions.appendChild(note);
+    }
+    setTimeout(() => {
+      if (token !== routeOptionToken) return;
+      const options = buildClickRouteOptions(draw.originCoords, draw.destCoords, estimate);
+      if (token !== routeOptionToken) return;
+      renderRouteOptions(options.length ? options : [primary], 0);
+      selectRouteOption(0, false);
+    }, 0);
   }
-
   routeDetail.classList.remove("hidden");
-  // Sonuç listesi uzun olduğunda (ör. onlarca proje) kullanıcı ortadan/alttan
-  // bir karta tıklayınca rota detayı listenin ÜSTÜNDE render edildiği için
-  // görünmüyordu — kullanıcı manuel yukarı kaydırmak zorunda kalıyordu.
-  // Panel her gösterildiğinde otomatik olarak görünür alana kaydırılır.
   routeDetail.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 

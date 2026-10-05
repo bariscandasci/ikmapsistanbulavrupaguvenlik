@@ -90,7 +90,7 @@ vm.createContext(context);
 const appSource = [
   fs.readFileSync(path.join(root, "data.js"), "utf8"),
   fs.readFileSync(path.join(root, "app.js"), "utf8"),
-  "loadLocalTransitNetwork().then(function () { return loadLocalTransitGeometry(); }).then(function () { globalThis.__graph = transitGraph; globalThis.__estimate = estimateTransit; globalThis.__shape = rideShapeLatLngs; });",
+  "loadLocalTransitNetwork().then(function () { return loadLocalTransitGeometry(); }).then(function () { globalThis.__graph = transitGraph; globalThis.__estimate = estimateTransit; globalThis.__shape = rideShapeLatLngs; globalThis.__options = buildClickRouteOptions; });",
 ].join("\n");
 
 vm.runInContext(appSource, context);
@@ -130,6 +130,17 @@ function wait(ms) {
     mallRoute.steps.some((step) => step.lineId && (step.lineId.startsWith("iett_") || step.lineId.startsWith("mbs_"))),
     "Mall rotası otobüs kullanmıyor: " + mallRoute.steps.map((s) => s.line).join(" | ")
   );
+  const mallOptions = context.__options(
+    { lat: merkez.lat, lng: merkez.lng },
+    { lat: mall.lat, lng: mall.lng },
+    mallRoute
+  );
+  const optionKey = (opt) => (opt.steps || []).filter((step) => step.lineId).map((step) => step.lineId).join(">");
+  assert(mallOptions.length >= 2, "Mall tek rota seçeneği: " + mallOptions.map((opt) => opt.label + " " + opt.routeSummary).join(" || "));
+  assert(mallOptions[0].durationMin === mallRoute.durationMin, "İlk seçenek en hızlı rota değil");
+  assert(optionKey(mallOptions[0]) === optionKey(mallRoute), "İlk seçenek ana rotadan saptı");
+  assert(new Set(mallOptions.map(optionKey)).size === mallOptions.length, "Rota seçenekleri birbirinin kopyası");
+  assert(!mallOptions.some((opt) => /\b(925|976|760)\b/.test(opt.routeSummary || "")), "Listede olmayan hat uyduruldu");
   const busLines = network.lines.filter((line) => line.mode === "otobus");
   assert(busLines.length > 400, "İETT hatları eksik: " + busLines.length);
   assert(busLines.some((line) => line.hatNo === "146T"), "146T yok");
