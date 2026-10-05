@@ -56,7 +56,23 @@ const context = {
   localStorage: { getItem() { return null; }, setItem() {} },
   L: {
     map() {
-      return { setView() { return this; }, addLayer() {}, removeLayer() {}, hasLayer() { return true; }, fitBounds() {} };
+      return {
+        setView() { return this; },
+        addLayer() {},
+        removeLayer() {},
+        hasLayer() { return true; },
+        fitBounds() {},
+        on() { return this; },
+        createPane() {},
+        getPane() { return { style: {} }; },
+        flyTo() { return this; },
+        panTo() { return this; },
+        getZoom() { return 11; },
+      };
+    },
+    circle() {
+      const node = { addTo() { return node; }, setLatLng() {}, setRadius() {} };
+      return node;
     },
     tileLayer() { return layer(); },
     control: { scale() { return { addTo() {} }; } },
@@ -141,6 +157,18 @@ function wait(ms) {
   assert(optionKey(mallOptions[0]) === optionKey(mallRoute), "İlk seçenek ana rotadan saptı");
   assert(new Set(mallOptions.map(optionKey)).size === mallOptions.length, "Rota seçenekleri birbirinin kopyası");
   assert(!mallOptions.some((opt) => /\b(925|976|760)\b/.test(opt.routeSummary || "")), "Listede olmayan hat uyduruldu");
+
+  const kirazli = context.__graph.stopsById.get("stop_kirazli");
+  const navCues = context.buildNavCues([
+    { mode: "hub", line: "Yürüyüş", from: "Başlangıç", to: "Kirazlı", lineId: null, toStopId: "stop_kirazli" },
+    { mode: "metro", line: "M3", from: "Kirazlı", to: "İkitelli Sanayi", lineId: "M3", fromStopId: "stop_kirazli", toStopId: "stop_ikitelli_sanayi" },
+  ], { lat: 41.07, lng: 28.8 });
+  assert(navCues.length === 2, "Yönlendirme adımı eksik: " + navCues.length);
+  assert(Math.abs(navCues[0].lat - kirazli.lat) < 0.0001, "İlk adım Kirazlı değil");
+  assert(context.advanceNavIndex(navCues, 0, { lat: kirazli.lat, lng: kirazli.lng }) === 1, "30 m içinde sonraki adıma geçilmedi");
+  assert(context.advanceNavIndex(navCues, 0, { lat: kirazli.lat + 0.01, lng: kirazli.lng }) === 0, "Uzak konum adımı ilerletti");
+  assert(context.formatNavDistance(28) === "28 m", "Metre yazımı");
+  assert(context.formatNavDistance(1400) === "1,4 km", "Kilometre yazımı");
   const busLines = network.lines.filter((line) => line.mode === "otobus");
   assert(busLines.length > 400, "İETT hatları eksik: " + busLines.length);
   assert(busLines.some((line) => line.hatNo === "146T"), "146T yok");

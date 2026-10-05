@@ -2036,6 +2036,273 @@ function districtIcon(color) {
 let markersLayer = L.layerGroup().addTo(map);
 let routesLayer = L.layerGroup().addTo(map);
 
+// Canlı kullanıcı konumu ve adım adım yönlendirme. Takip, kullanıcı haritayı
+// sürükleyince kapanır; buton flyTo ile açar. Durak yarıçapı 30 m.
+const NAV_ARRIVE_M = 30;
+const navBanner = document.getElementById("navBanner");
+const navDistance = document.getElementById("navDistance");
+const navTitle = document.getElementById("navTitle");
+const navSubtitle = document.getElementById("navSubtitle");
+const locateBtn = document.getElementById("locateBtn");
+let followMode = false;
+let userFix = null;
+let userHeading = null;
+let userMarker = null;
+let userBeamEl = null;
+let userAccuracyCircle = null;
+let geoWatchId = null;
+let geoFailed = false;
+let lastFollowPan = 0;
+let navCues = [];
+let navIndex = 0;
+
+if (typeof map.createPane === "function") {
+  map.createPane("userPane");
+  const userPane = map.getPane("userPane");
+  if (userPane) {
+    userPane.style.zIndex = "650";
+    userPane.style.pointerEvents = "none";
+  }
+}
+if (typeof map.on === "function") {
+  map.on("dragstart", () => {
+    if (!followMode) return;
+    followMode = false;
+    updateLocateButton();
+  });
+}
+
+function stopRecord(id) {
+  if (!id) return null;
+  const stop = (transitGraph && transitGraph.stopsById.get(id))
+    || (transitGraphWithDolmus && transitGraphWithDolmus.stopsById.get(id))
+    || null;
+  if (!stop || typeof stop.lat !== "number" || typeof stop.lng !== "number") return null;
+  return { lat: stop.lat, lng: stop.lng, name: stop.name };
+}
+
+function buildNavCues(steps, destCoords) {
+  const cues = [];
+  (steps || []).forEach((step, i) => {
+    const next = steps[i + 1];
+    let point = stopRecord(step.toStopId);
+    if (!point && next) point = stopRecord(next.fromStopId);
+    if (!point && i === steps.length - 1 && destCoords && typeof destCoords.lat === "number") {
+      point = { lat: destCoords.lat, lng: destCoords.lng, name: step.to || "Hedef" };
+    }
+    if (!point) return;
+    const walk = !step.lineId;
+    cues.push({
+      lat: point.lat,
+      lng: point.lng,
+      title: walk ? "Yürüyün" : step.line,
+      detail: walk ? (point.name || step.to || "Durak") : ("İniş: " + (step.to || point.name || "Durak")),
+    });
+  });
+  const keyOf = (cue) => cue.lat.toFixed(5) + "," + cue.lng.toFixed(5);
+  return cues.filter((cue, i) => i === 0 || keyOf(cue) !== keyOf(cues[i - 1]));
+}
+
+function advanceNavIndex(cues, index, user) {
+  if (!user || !cues.length || index >= cues.length - 1) return index;
+  const meters = haversineKm(user, cues[index]) * 1000;
+  return meters <= NAV_ARRIVE_M ? index + 1 : index;
+}
+
+function formatNavDistance(meters) {
+  if (!Number.isFinite(meters)) return "—";
+  if (meters < 1000) return Math.max(1, Math.round(meters)) + " m";
+  const km = meters / 1000;
+  const text = km < 10 ? km.toFixed(1) : String(Math.round(km));
+  return text.replace(".", ",") + " km";
+}
+
+function setNavRoute(steps, destCoords) {
+  navCues = buildNavCues(steps, destCoords);
+  navIndex = 0;
+  if (userFix) navIndex = advanceNavIndex(navCues, navIndex, userFix);
+  updateNavBanner();
+}
+
+function clearNavRoute() {
+  navCues = [];
+  navIndex = 0;
+  updateNavBanner();
+}
+
+function updateNavBanner() {
+  if (!navBanner) return;
+  if (!navCues.length) {
+    navBanner.classList.add("hidden");
+    return;
+  }
+  navBanner.classList.remove("hidden");
+  const cue = navCues[Math.min(navIndex, navCues.length - 1)];
+  const meters = userFix ? haversineKm(userFix, cue) * 1000 : null;
+  const arrived = meters != null && navIndex >= navCues.length - 1 && meters <= NAV_ARRIVE_M;
+  navBanner.classList.toggle("nav-banner-arrived", arrived);
+  if (!userFix) {
+    navDistance.textContent = "Konum";
+    navTitle.textContent = cue.title;
+    navSubtitle.textContent = "Konum alınınca mesafe güncellenir. · " + (navIndex + 1) + "/" + navCues.length;
+    return;
+  }
+  if (arrived) {
+    navDistance.textContent = "Vardınız";
+    navTitle.textContent = cue.detail || cue.title;
+    navSubtitle.textContent = "Son nokta · " + navCues.length + "/" + navCues.length;
+    return;
+  }
+  navDistance.textContent = formatNavDistance(meters);
+  navTitle.textContent = cue.title;
+  navSubtitle.textContent = cue.detail + " · " + (navIndex + 1) + "/" + navCues.length;
+}
+
+function updateLocateButton() {
+  if (!locateBtn) return;
+  locateBtn.classList.toggle("locate-btn-active", followMode);
+  locateBtn.classList.toggle("locate-btn-error", geoFailed && !userFix);
+  locateBtn.setAttribute("aria-pressed", followMode ? "true" : "false");
+  locateBtn.title = followMode ? "Takip açık" : (geoFailed && !userFix ? "Konum izni kapalı" : "Beni takip et");
+}
+
+function applyUserHeading() {
+  if (!userBeamEl) return;
+  if (userHeading == null) {
+    userBeamEl.classList.remove("user-gps-beam-on");
+    return;
+  }
+  userBeamEl.classList.add("user-gps-beam-on");
+  userBeamEl.style.transform = "rotate(" + userHeading + "deg)";
+}
+
+function renderUserMarker(lat, lng, accuracy) {
+  if (typeof L.circle !== "function" || typeof L.marker !== "function") return;
+  const latlng = [lat, lng];
+  if (Number.isFinite(accuracy) && accuracy > 0) {
+    if (!userAccuracyCircle) {
+      userAccuracyCircle = L.circle(latlng, {
+        radius: accuracy,
+        pane: "userPane",
+        color: "#4285F4",
+        weight: 1,
+        opacity: 0.5,
+        fillColor: "#4285F4",
+        fillOpacity: 0.12,
+        interactive: false,
+      }).addTo(map);
+    } else {
+      userAccuracyCircle.setLatLng(latlng);
+      userAccuracyCircle.setRadius(accuracy);
+    }
+  }
+  if (!userMarker) {
+    userMarker = L.marker(latlng, {
+      pane: "userPane",
+      interactive: false,
+      keyboard: false,
+      zIndexOffset: 1000,
+      icon: L.divIcon({
+        className: "user-gps-icon",
+        html: '<div class="user-gps"><div class="user-gps-beam"></div><div class="user-gps-dot"></div></div>',
+        iconSize: [140, 140],
+        iconAnchor: [70, 70],
+      }),
+    }).addTo(map);
+    const el = userMarker.getElement && userMarker.getElement();
+    userBeamEl = el ? el.querySelector(".user-gps-beam") : null;
+    applyUserHeading();
+  } else {
+    userMarker.setLatLng(latlng);
+  }
+}
+
+function onUserPosition(pos) {
+  if (!pos || !pos.coords) return;
+  const lat = pos.coords.latitude;
+  const lng = pos.coords.longitude;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+  geoFailed = false;
+  userFix = { lat, lng };
+  renderUserMarker(lat, lng, pos.coords.accuracy);
+  if (followMode && typeof map.panTo === "function") {
+    const now = Date.now();
+    if (now - lastFollowPan >= 800) {
+      lastFollowPan = now;
+      map.panTo([lat, lng], { animate: true, duration: 0.45 });
+    }
+  }
+  if (navCues.length) navIndex = advanceNavIndex(navCues, navIndex, userFix);
+  updateNavBanner();
+  updateLocateButton();
+}
+
+function onUserGeoError(err) {
+  geoFailed = true;
+  if (locateBtn) {
+    locateBtn.classList.add("locate-btn-error");
+    locateBtn.title = err && err.code === 1 ? "Konum izni kapalı" : "Konum alınamadı";
+  }
+}
+
+function ensureUserWatch() {
+  const geo = typeof navigator !== "undefined" && navigator.geolocation;
+  if (!geo) {
+    geoFailed = true;
+    updateLocateButton();
+    return;
+  }
+  if (geoFailed && geoWatchId != null) {
+    geo.clearWatch(geoWatchId);
+    geoWatchId = null;
+  }
+  if (geoWatchId != null) return;
+  geoFailed = false;
+  geoWatchId = geo.watchPosition(onUserPosition, onUserGeoError, {
+    enableHighAccuracy: true,
+    maximumAge: 1000,
+    timeout: 20000,
+  });
+}
+
+function onDeviceOrientation(event) {
+  if (!event) return;
+  let heading = null;
+  if (typeof event.webkitCompassHeading === "number" && Number.isFinite(event.webkitCompassHeading)) {
+    heading = event.webkitCompassHeading;
+  } else if (typeof event.alpha === "number" && Number.isFinite(event.alpha)) {
+    heading = event.absolute ? (360 - event.alpha) : event.alpha;
+  }
+  if (heading == null) return;
+  userHeading = (heading % 360 + 360) % 360;
+  applyUserHeading();
+}
+
+function requestDeviceOrientation() {
+  const Orientation = window.DeviceOrientationEvent;
+  if (Orientation && typeof Orientation.requestPermission === "function") {
+    Orientation.requestPermission().catch(() => {});
+  }
+}
+
+if (locateBtn) {
+  locateBtn.addEventListener("click", () => {
+    requestDeviceOrientation();
+    ensureUserWatch();
+    followMode = true;
+    updateLocateButton();
+    if (userFix && typeof map.flyTo === "function") {
+      lastFollowPan = Date.now();
+      map.flyTo([userFix.lat, userFix.lng], Math.max(typeof map.getZoom === "function" ? map.getZoom() : 16, 16), { duration: 0.8 });
+    }
+  });
+}
+if (typeof window !== "undefined" && window.addEventListener) {
+  window.addEventListener("deviceorientationabsolute", onDeviceOrientation, true);
+  window.addEventListener("deviceorientation", onDeviceOrientation, true);
+}
+ensureUserWatch();
+
 // Proje pinleri (53 adet) çok kalabalık olduğundan (ör. Bilkent'te 15+ proje
 // üst üste biniyor) kümeleme kullanıyoruz: yakınlaşınca otomatik ayrışırlar.
 const projectCluster = L.markerClusterGroup({
@@ -2384,6 +2651,7 @@ function renderNearbyLinesPanel(originId) {
 function clearResults() {
   resultsList.innerHTML = "";
   routesLayer.clearLayers();
+  clearNavRoute();
   routeDetail.classList.add("hidden");
   emptyState.classList.remove("hidden");
   resultsHeading.textContent = "";
@@ -3029,6 +3297,7 @@ function drawRoute(originCoords, row, bucket, destCoordsOverride) {
   const destCoords = destCoordsOverride || { lat: row.project.lat, lng: row.project.lng };
   currentRouteDraw = { originCoords, destCoords, bucket, row };
   const steps = row.steps || [];
+  setNavRoute(steps, destCoords);
   if (steps.length === 0) return;
 
   const lineOfStep = (s) => (s.lineId ? linesById[s.lineId] : null);
