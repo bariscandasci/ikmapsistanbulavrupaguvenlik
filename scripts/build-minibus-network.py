@@ -166,6 +166,11 @@ def main():
         ring = hav(samples[0], samples[-1]) < 0.04 and len(samples) > 3
         if ring:
             samples = samples[:-1]
+        # A30 Bağcılar–Otocenter–MOİ, Google'ın Mall of İstanbul için
+        # gösterdiği tek minibüs. Diğer hatlar ana grafı kestirme yapıp
+        # metro/metrobüsün önüne geçiyordu; onlar dolmuş alternatifinde kalır.
+        on_main_route = hat == "A30" and "OTOCENTER" in name.upper()
+        mode = "otobus" if on_main_route else "dolmus"
         stop_ids = []
         for index, (lng, lat) in enumerate(samples):
             stop_id = f"{line_id}_{index:03d}"
@@ -175,7 +180,7 @@ def main():
                 "name": label[:80],
                 "lat": round(lat, 6),
                 "lng": round(lng, 6),
-                "mode": "otobus",
+                "mode": mode,
                 "coordSource": "ibb-minibus",
                 "knownStopId": stop_id,
             })
@@ -186,7 +191,7 @@ def main():
         network["lines"].append({
             "id": line_id,
             "name": f"{hat}: {name}"[:140],
-            "mode": "otobus",
+            "mode": mode,
             "verified": True,
             "source": SOURCE,
             "hatNo": hat,

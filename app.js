@@ -1406,7 +1406,7 @@ function loadDolmusLines() {
 function loadLocalTransitNetwork() {
   if (localTransitNetworkPromise) return localTransitNetworkPromise;
   localTransitNetworkPromise = Promise.all([
-    fetch("transit_network.json?v=9").then((res) => res.json()),
+    fetch("transit_network.json?v=10").then((res) => res.json()),
     loadDolmusLines(),
   ])
     .then(([egoData, dolmusData]) => {
@@ -2745,6 +2745,69 @@ function fetchDrivingGeometry(a, b) {
   return fetchOsrmGeometry("routed-car/route/v1/driving", drivingGeometryCache, a, b);
 }
 
+// İETT durakları shapes.txt içermiyor; bacak, durakları birleştiren düz
+// kiriş olarak çizilince caddeyi değil binaları kesiyor. Minibüs GeoJSON'u
+// da yer yer otoyol eksenine oturuyor. Google Haritalar çizgiyi yolun
+// üstüne yatırır. Burada binişten inişe kadar duraklar ara nokta verilip
+// araç rotası isteniyor; süre değişmez, sadece çizgi caddeyi takip eder.
+function riddenStops(step) {
+  if (!step || !step.lineId || !step.fromStopId || !step.toStopId || !transitGraph) return null;
+  const line = transitGraph.linesByLocalId.get(step.lineId);
+  if (!line || !line.stopIds) return null;
+  const ids = line.stopIds;
+  const a = ids.indexOf(step.fromStopId);
+  const b = ids.indexOf(step.toStopId);
+  if (a < 0 || b < 0 || a === b) return null;
+  const out = [];
+  const dir = a < b ? 1 : -1;
+  for (let i = a; dir > 0 ? i <= b : i >= b; i += dir) {
+    const stop = transitGraph.stopsById.get(ids[i]);
+    if (!stop || typeof stop.lat !== "number") return null;
+    const prev = out[out.length - 1];
+    if (prev && haversineKm(prev, stop) < 0.03) continue;
+    out.push(stop);
+  }
+  return out.length >= 2 ? out : null;
+}
+
+function decimateStops(stops, maxCount) {
+  if (stops.length <= maxCount) return stops.slice();
+  const picked = [];
+  const last = stops.length - 1;
+  for (let i = 0; i < maxCount; i++) picked.push(stops[Math.round((i * last) / (maxCount - 1))]);
+  return picked;
+}
+
+const drivingViaCache = new Map();
+function fetchDrivingThrough(stops) {
+  const sample = decimateStops(stops, 18);
+  const path = sample.map((s) => `${s.lng.toFixed(5)},${s.lat.toFixed(5)}`).join(";");
+  if (drivingViaCache.has(path)) return drivingViaCache.get(path);
+  const promise = (async () => {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const url = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${path}?overview=full&geometries=geojson`;
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (!res.ok) return null;
+      const data = await res.json();
+      const coords = data && data.routes && data.routes[0] && data.routes[0].geometry && data.routes[0].geometry.coordinates;
+      if (!coords || coords.length < 2) return null;
+      const latlngs = coords.map(([lng, lat]) => [lat, lng]);
+      const roadKm = polylineKm(latlngs);
+      let hopKm = 0;
+      for (let i = 1; i < sample.length; i++) hopKm += haversineKm(sample[i - 1], sample[i]);
+      if (roadKm < hopKm * 0.72 || roadKm > Math.max(hopKm * 1.85, hopKm + 3)) return null;
+      return latlngs;
+    } catch (e) {
+      return null;
+    }
+  })();
+  drivingViaCache.set(path, promise);
+  return promise;
+}
+
 /**
  * Rotayı, mümkün olduğunca hatların OSM'den alınan gerçek geometrisini
  * (yol/ray şeklini) takip ederek çizer. Her bacak kendi rengiyle/gerçek
@@ -2861,8 +2924,9 @@ function drawRoute(originCoords, row, bucket, destCoordsOverride) {
       // hâlâ "6 6" ile "bu kısım tahmini" diyor), kalınlık/belirginlikte
       // DEĞİL. Sadece yürüyüş (zaten kendi kalın boncuk stiliyle belirgin)
       // halosuz kalıyor — Google da yürüyüş noktalarına halo koymuyor.
+      let halo = null;
       if (kind === "solid" || kind === "fallback") {
-        L.polyline(latlngs, {
+        halo = L.polyline(latlngs, {
           color: "#ffffff",
           weight: 7,
           opacity: 0.9,
@@ -2886,6 +2950,7 @@ function drawRoute(originCoords, row, bucket, destCoordsOverride) {
         lineCap: "round",
       }).addTo(routesLayer);
       poly.bindTooltip(tooltipText, { sticky: true });
+      poly._routeHalo = halo;
       allPoints.push(...latlngs);
       return poly;
     };
@@ -2895,11 +2960,12 @@ function drawRoute(originCoords, row, bucket, destCoordsOverride) {
     const jumpLimit = rail ? 4 : MAX_GEOMETRY_JUMP_KM;
     const shapeTrusted = along && along.length > 1 && maxJumpKm(along) <= jumpLimit;
 
+    let vehiclePoly = null;
     if (shapeTrusted) {
       // Durak sırasına oturan parça: katı çizgi. Metro/Ankaray'da OSM ray
       // geometrisi olmadığı için bu, istasyonları sırayla birleştirir —
       // caddeden giden bir araç rotası değil.
-      drawSegment(along, "solid");
+      vehiclePoly = drawSegment(along, "solid");
       const segStart = { lat: along[0][0], lng: along[0][1] };
       const segEnd = { lat: along[along.length - 1][0], lng: along[along.length - 1][1] };
       if (haversineKm(startA, segStart) > REAL_GEOMETRY_CONNECT_LIMIT_KM) {
@@ -2928,13 +2994,23 @@ function drawRoute(originCoords, row, bucket, destCoordsOverride) {
         walkPolyToUpgrade.setLatLngs(coords);
       });
     }
-    // Aynı mantık, araç profiliyle: geometrisi olmayan/güvenilmez bulunan bir
-    // otobüs/metro bacağı da artık binaları kesen düz bir çizgi yerine,
-    // caddeleri takip eden bir ARAÇ rotasına yükseltilir (bkz. fetchDrivingGeometry).
-    if (!isWalk && fallbackPolyToUpgrade) {
+    // Otobüs ve metrobüs: durak sırası ara nokta olarak araca sorulur, çizgi
+    // caddeyi/otoyolu takip eder. Metro rayda kalır. Durak dizisi yoksa eski
+    // iki nokta arası araç rotası yedek olarak durur.
+    const viaStops = !isWalk && !rail ? riddenStops(step) : null;
+    const linePoly = !isWalk && !rail ? vehiclePoly || fallbackPolyToUpgrade : null;
+    if (linePoly && viaStops) {
+      fetchDrivingThrough(viaStops).then((coords) => {
+        if (myToken !== routeDrawToken || !coords) return;
+        linePoly.setLatLngs(coords);
+        linePoly.setStyle({ dashArray: null, color: TRANSIT_LINE_COLOR, weight: 5, opacity: 1 });
+        if (linePoly._routeHalo) linePoly._routeHalo.setLatLngs(coords);
+      });
+    } else if (!isWalk && fallbackPolyToUpgrade) {
       fetchDrivingGeometry(startA, endA).then((coords) => {
         if (myToken !== routeDrawToken || !coords) return;
         fallbackPolyToUpgrade.setLatLngs(coords);
+        if (fallbackPolyToUpgrade._routeHalo) fallbackPolyToUpgrade._routeHalo.setLatLngs(coords);
       });
     }
   });
