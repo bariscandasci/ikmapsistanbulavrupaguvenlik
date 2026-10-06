@@ -3116,6 +3116,30 @@ function graphLine(step) {
   return null;
 }
 
+// Durakları hattın başından itibaren geometriye oturtur. Pencere kısa tutulur;
+// döngü hattın ilerideki ikinci geçişi "en yakın nokta" diye seçilmesin.
+function geometryIndexesForStops(geo, graph, ids, lastStopIndex) {
+  let cursor = 0;
+  const indexAt = [];
+  for (let s = 0; s <= lastStopIndex; s++) {
+    const stop = graph.stopsById.get(ids[s]);
+    if (!stop || typeof stop.lat !== "number") return null;
+    const end = Math.min(geo.length - 1, cursor + 48);
+    let bestI = cursor;
+    let bestD = Infinity;
+    for (let i = cursor; i <= end; i++) {
+      const d = haversineKm(stop, { lat: geo[i][0], lng: geo[i][1] });
+      if (d < bestD) {
+        bestD = d;
+        bestI = i;
+      }
+    }
+    indexAt.push(bestI);
+    cursor = bestI;
+  }
+  return indexAt;
+}
+
 function rideShapeLatLngs(step) {
   if (!step.lineId || !step.fromStopId || !step.toStopId) return null;
   const found = graphLine(step);
@@ -3126,33 +3150,33 @@ function rideShapeLatLngs(step) {
   const a = ids.indexOf(step.fromStopId);
   const b = ids.indexOf(step.toStopId);
   if (a < 0 || b < 0 || a === b) return null;
-  const ordered = [];
-  if (a < b) {
-    for (let i = a; i <= b; i++) ordered.push(ids[i]);
-  } else {
-    for (let i = a; i >= b; i--) ordered.push(ids[i]);
-  }
-  const geo = localTransitGeometry && localTransitGeometry[step.lineId];
-  const pts = [];
-  const push = (lat, lng) => {
-    const last = pts[pts.length - 1];
-    if (last && Math.abs(last[0] - lat) < 1e-7 && Math.abs(last[1] - lng) < 1e-7) return;
-    pts.push([lat, lng]);
-  };
-  for (let i = 0; i < ordered.length; i++) {
-    const stop = graph.stopsById.get(ordered[i]);
-    if (!stop || typeof stop.lat !== "number") return null;
-    if (i > 0 && geo) {
-      const prev = graph.stopsById.get(ordered[i - 1]);
-      const piece = shortGeometryBetween(geo, prev, stop);
-      if (piece && piece.length > 1) {
-        const start = { lat: piece[0][0], lng: piece[0][1] };
-        const end = { lat: piece[piece.length - 1][0], lng: piece[piece.length - 1][1] };
-        const forward = haversineKm({ lat: prev.lat, lng: prev.lng }, start) <= haversineKm({ lat: prev.lat, lng: prev.lng }, end);
-        (forward ? piece : piece.slice().reverse()).forEach(([lat, lng]) => push(lat, lng));
-      }
+  const fromFile = localTransitGeometry && localTransitGeometry[step.lineId];
+  const inline = line.geometry && line.geometry.length > 1 ? line.geometry : null;
+  const geo = fromFile && fromFile.length > 1 ? fromFile : inline;
+  if (geo) {
+    const indexAt = geometryIndexesForStops(geo, graph, ids, Math.max(a, b));
+    if (!indexAt) return null;
+    let lo = indexAt[Math.min(a, b)];
+    let hi = indexAt[Math.max(a, b)];
+    if (hi < lo) return null;
+    if (hi === lo) {
+      if (hi + 1 < geo.length) hi += 1;
+      else if (lo > 0) lo -= 1;
     }
-    push(stop.lat, stop.lng);
+    const slice = geo.slice(lo, hi + 1);
+    if (slice.length < 2) return null;
+    // Dilim olduğu gibi. Durak koordinatı eklenmez; kaldırımdaki durak
+    // yol eksenine 90 derece kılçık çizdiriyordu.
+    return a < b ? slice : slice.slice().reverse();
+  }
+  const pts = [];
+  const dir = a < b ? 1 : -1;
+  for (let i = a; dir > 0 ? i <= b : i >= b; i += dir) {
+    const stop = graph.stopsById.get(ids[i]);
+    if (!stop || typeof stop.lat !== "number") return null;
+    const last = pts[pts.length - 1];
+    if (last && Math.abs(last[0] - stop.lat) < 1e-7 && Math.abs(last[1] - stop.lng) < 1e-7) continue;
+    pts.push([stop.lat, stop.lng]);
   }
   return pts.length > 1 ? pts : null;
 }
@@ -3172,6 +3196,13 @@ function officialLineShape(step) {
 // OSRM varsayılanı overview=simplified olduğu için çizgiyi budayıp
 // köşelerden keser. overview=full geometri sadeleştirmesini kapatır.
 const OSRM_GEOMETRY_QUERY = "overview=full&geometries=geojson";
+// radiuses, her koordinatı 40 m içindeki yol kenarlarına aday yapar. OSRM
+// en yakın kaldırım/yan yol yerine güzergahı uzatmayan ana aksı seçer.
+// Durak koordinatı cevabın başına veya sonuna eklenmez.
+function osrmGeometryQuery(pointCount) {
+  const radiuses = new Array(pointCount).fill(40).join(";");
+  return `${OSRM_GEOMETRY_QUERY}&radiuses=${radiuses}`;
+}
 
 // Yürüyüş (mode hub) yalnız routed-foot. Otobüs ve minibüs routed-car.
 // İstek başarısız olursa null döner; çağıran düz kuş uçuşu çizmez.
@@ -3182,7 +3213,7 @@ function fetchOsrmGeometry(profileUrlSegment, cache, a, b) {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 6000);
-      const url = `https://routing.openstreetmap.de/${profileUrlSegment}/${a.lng},${a.lat};${b.lng},${b.lat}?${OSRM_GEOMETRY_QUERY}`;
+      const url = `https://routing.openstreetmap.de/${profileUrlSegment}/${a.lng},${a.lat};${b.lng},${b.lat}?${osrmGeometryQuery(2)}`;
       const res = await fetch(url, { signal: controller.signal });
       clearTimeout(timeout);
       if (!res.ok) return null;
@@ -3251,13 +3282,14 @@ function fetchDrivingThrough(stops) {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 8000);
-      const url = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${path}?${OSRM_GEOMETRY_QUERY}`;
+      const url = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${path}?${osrmGeometryQuery(sample.length)}`;
       const res = await fetch(url, { signal: controller.signal });
       clearTimeout(timeout);
       if (!res.ok) return null;
       const data = await res.json();
       const coords = data && data.routes && data.routes[0] && data.routes[0].geometry && data.routes[0].geometry.coordinates;
       if (!coords || coords.length < 2) return null;
+      // OSRM geometrisi olduğu gibi kullanılır. Durak unshift/push edilmez.
       const latlngs = coords.map(([lng, lat]) => [lat, lng]);
       const roadKm = polylineKm(latlngs);
       let hopKm = 0;
@@ -3417,15 +3449,6 @@ function drawRoute(originCoords, row, bucket, destCoordsOverride) {
     };
 
     const rail = step.mode === "metro" || step.mode === "ankaray" || step.mode === "tren";
-    const roadStyle = { dashArray: null, color: TRANSIT_LINE_COLOR, weight: 5, opacity: 1, smoothFactor: 1, lineJoin: "round", lineCap: "round" };
-    const applyRoad = (poly, coords) => {
-      poly.setLatLngs(coords);
-      poly.setStyle(roadStyle);
-      if (poly._routeHalo) {
-        poly._routeHalo.setLatLngs(coords);
-        poly._routeHalo.setStyle({ smoothFactor: 1, lineJoin: "round", lineCap: "round" });
-      }
-    };
 
     if (isWalk) {
       // Yaya adımı araç profiline girmez. Sokak yolu gelmezse düz kiriş çizilmez.
@@ -3439,19 +3462,23 @@ function drawRoute(originCoords, row, bucket, destCoordsOverride) {
       if (along && along.length > 1 && maxJumpKm(along) <= 4) drawSegment(along, "solid");
       else allPoints.push([startA.lat, startA.lng], [endA.lat, endA.lng]);
     } else {
-      // Otobüs ve minibüs: routed-car. OSRM yoksa transit_network_geometry.json kalır.
+      // Kayıtlı hat geometrisi varsa dilim olduğu gibi çizilir. OSRM bu
+      // bacakta çağrılmaz; durakları tek tek gezdirmek bölünmüş yolda
+      // U dönüşü ve refüj kesen zikzak üretiyordu.
       const official = !isUnreliableLineSegment(step) ? officialLineShape(step) : null;
-      let poly = official && official.length > 1 ? drawSegment(official, "solid") : null;
-      if (!poly) allPoints.push([startA.lat, startA.lng], [endA.lat, endA.lng]);
-      const viaStops = riddenStops(step);
-      const pending = viaStops && viaStops.length >= 2
-        ? fetchDrivingThrough(viaStops)
-        : fetchDrivingGeometry(startA, endA);
-      pending.then((coords) => {
-        if (myToken !== routeDrawToken || !coords || coords.length < 2) return;
-        if (!poly) poly = drawSegment(coords, "solid");
-        else applyRoad(poly, coords);
-      });
+      if (official && official.length > 1) {
+        drawSegment(official, "solid");
+      } else {
+        allPoints.push([startA.lat, startA.lng], [endA.lat, endA.lng]);
+        const viaStops = riddenStops(step);
+        const pending = viaStops && viaStops.length >= 2
+          ? fetchDrivingThrough(viaStops)
+          : fetchDrivingGeometry(startA, endA);
+        pending.then((coords) => {
+          if (myToken !== routeDrawToken || !coords || coords.length < 2) return;
+          drawSegment(coords, "solid");
+        });
+      }
     }
   });
 
