@@ -1,8 +1,14 @@
 /**
  * Ulaşım & Proje Eşleştirme Modülü — uygulama mantığı.
  * Classic script (module değil) — file:// üzerinden de çalışsın diye.
- * ANKARA_DATA global değişkeni data.js tarafından tanımlanır.
+ * İstanbul proje verisi data.js içindeki ANKARA_DATA nesnesidir
+ * (şema Ankara kopyasından gelir, içerik Avrupa yakasıdır).
+ * Tarayıcıda data.js önce yüklenir. Vercel app.js'i tek başına
+ * çalıştırırsa aynı dosya require ile alınır.
  */
+if (!(globalThis.ANKARA_DATA && globalThis.ANKARA_DATA.projects) && typeof require === "function") {
+  require("./data.js");
+}
 
 // ---------------------------------------------------------------------------
 // 0) PAYLAŞIMLI PROJE VERİTABANI (Google Sheets + Apps Script)
@@ -23,19 +29,19 @@ const SHEET_CACHE_KEY = "ik_istanbul_avrupa_sheet_cache_v1";
 // "sıfırlanmış" gibi görünüyordu.
 function saveProjectsCache() {
   try {
-    localStorage.setItem(SHEET_CACHE_KEY, JSON.stringify(ANKARA_DATA.projects));
+    localStorage.setItem(SHEET_CACHE_KEY, JSON.stringify(globalThis.ANKARA_DATA.projects));
   } catch {
     /* localStorage kullanılamıyorsa sessizce yoksay */
   }
 }
 
 // data.js'teki statik projelerde henüz urgent/active alanı yok — bunları
-// eski (ANKARA_DATA.urgentProjectIds / referral==="Aktif değil") mantığından
+// eski (globalThis.ANKARA_DATA.urgentProjectIds / referral==="Aktif değil") mantığından
 // türeterek her projeye ekliyoruz; Sheet'ten canlı veri geldiğinde bu
 // alanların üzerine (Sheet'teki gerçek değerlerle) yazılır.
 (function seedStaticActiveUrgentFields() {
-  const staticUrgentIds = new Set(ANKARA_DATA.urgentProjectIds || []);
-  ANKARA_DATA.projects.forEach((p) => {
+  const staticUrgentIds = new Set(globalThis.ANKARA_DATA.urgentProjectIds || []);
+  globalThis.ANKARA_DATA.projects.forEach((p) => {
     if (p.urgent === undefined) p.urgent = staticUrgentIds.has(p.id);
     if (p.active === undefined) p.active = p.referral !== "Aktif değil";
   });
@@ -47,13 +53,13 @@ function saveProjectsCache() {
 let URGENT_PROJECT_IDS = new Set();
 let INACTIVE_PROJECT_IDS = new Set();
 function recomputeUrgentInactiveSets() {
-  URGENT_PROJECT_IDS = new Set(ANKARA_DATA.projects.filter((p) => p.urgent).map((p) => p.id));
-  INACTIVE_PROJECT_IDS = new Set(ANKARA_DATA.projects.filter((p) => !p.active).map((p) => p.id));
+  URGENT_PROJECT_IDS = new Set(globalThis.ANKARA_DATA.projects.filter((p) => p.urgent).map((p) => p.id));
+  INACTIVE_PROJECT_IDS = new Set(globalThis.ANKARA_DATA.projects.filter((p) => !p.active).map((p) => p.id));
 }
 recomputeUrgentInactiveSets();
 
 function activeProjects() {
-  return ANKARA_DATA.projects.filter((p) => !INACTIVE_PROJECT_IDS.has(p.id));
+  return globalThis.ANKARA_DATA.projects.filter((p) => !INACTIVE_PROJECT_IDS.has(p.id));
 }
 
 // Apps Script'e yazma isteği gönderir. Content-Type kasıtlı olarak
@@ -102,21 +108,21 @@ function stopApproxCoords() {
     if (!stopId || map[stopId]) return;
     map[stopId] = { lat, lng };
   };
-  ANKARA_DATA.transitStops.forEach((s) => {
+  globalThis.ANKARA_DATA.transitStops.forEach((s) => {
     if (s.lat != null && s.lng != null) add(s.id, s.lat, s.lng);
   });
-  ANKARA_DATA.districts.forEach((d) => {
+  globalThis.ANKARA_DATA.districts.forEach((d) => {
     add(d.accessStopId, d.lat, d.lng);
     (d.neighborhoods || []).forEach((n) => add(n.accessStopId, n.lat, n.lng));
   });
-  ANKARA_DATA.projects.forEach((p) => add(p.accessStopId, p.lat, p.lng));
+  globalThis.ANKARA_DATA.projects.forEach((p) => add(p.accessStopId, p.lat, p.lng));
   stopApproxCoordsCache = map;
   return map;
 }
 
 /** Basit haversine ile en yakın gerçek durağı bulur — yeni eklenen bir proje için otomatik durak ataması. */
 function nearestTransitStop(lat, lng) {
-  const pool = localStopsById ? Object.values(localStopsById) : ANKARA_DATA.transitStops;
+  const pool = localStopsById ? Object.values(localStopsById) : globalThis.ANKARA_DATA.transitStops;
   let best = null;
   let bestDist = Infinity;
   pool.forEach((s) => {
@@ -134,15 +140,15 @@ function nearestTransitStop(lat, lng) {
 // 1) YARDIMCI ARAMA TABLOLARI
 // ---------------------------------------------------------------------------
 
-const stopsById = Object.fromEntries(ANKARA_DATA.transitStops.map((s) => [s.id, s]));
+const stopsById = Object.fromEntries(globalThis.ANKARA_DATA.transitStops.map((s) => [s.id, s]));
 const linesByStopId = {}; // stopId -> [lineId, ...]
-ANKARA_DATA.transitLines.forEach((line) => {
+globalThis.ANKARA_DATA.transitLines.forEach((line) => {
   line.stopIds.forEach((stopId) => {
     (linesByStopId[stopId] = linesByStopId[stopId] || []).push(line.id);
   });
 });
-const linesById = Object.fromEntries(ANKARA_DATA.transitLines.map((l) => [l.id, l]));
-const HUBS = new Set(ANKARA_DATA.hubStopIds);
+const linesById = Object.fromEntries(globalThis.ANKARA_DATA.transitLines.map((l) => [l.id, l]));
+const HUBS = new Set(globalThis.ANKARA_DATA.hubStopIds);
 
 function stopName(stopId) {
   return stopsById[stopId] ? stopsById[stopId].name : stopId;
@@ -1838,7 +1844,7 @@ function allOrigins() {
   // İlçeler + mahalleler, tek düz liste olarak (mahalle kendi stopId'sini
   // taşımıyorsa ilçenin access stop'unu miras alır)
   const items = [];
-  ANKARA_DATA.districts.forEach((d) => {
+  globalThis.ANKARA_DATA.districts.forEach((d) => {
     items.push({
       id: d.id,
       kind: "district",
@@ -1867,7 +1873,7 @@ function originById(id) {
 }
 
 function projectById(id) {
-  const p = ANKARA_DATA.projects.find((x) => x.id === id);
+  const p = globalThis.ANKARA_DATA.projects.find((x) => x.id === id);
   if (!p) return null;
   return { id: p.id, kind: "project", name: p.name, coords: { lat: p.lat, lng: p.lng }, stopId: p.accessStopId, sector: p.sector, address: p.address };
 }
@@ -1910,7 +1916,7 @@ function rankDistrictsForProject(projectId, thresholdMin = null) {
   const dest = projectById(projectId);
   if (!dest) return [];
 
-  const rows = ANKARA_DATA.districts.map((d) => {
+  const rows = globalThis.ANKARA_DATA.districts.map((d) => {
     const origin = originById(d.id);
     // fixedSide="dest": proje bu döngü boyunca sabit, ilçe her satırda
     // değişiyor — Dijkstra'nın proje tarafından koşup önbelleğe isabet
@@ -2308,7 +2314,7 @@ function buildProjectMarker(p) {
   }
   return m;
 }
-ANKARA_DATA.projects.forEach(buildProjectMarker);
+globalThis.ANKARA_DATA.projects.forEach(buildProjectMarker);
 map.addLayer(projectCluster);
 
 // Proje listesi kökten değiştiğinde (Sheet'ten canlı veri geldiğinde ya da
@@ -2316,14 +2322,14 @@ map.addLayer(projectCluster);
 function rebuildAllProjectMarkers() {
   projectCluster.clearLayers();
   Object.keys(projectMarkersById).forEach((id) => delete projectMarkersById[id]);
-  ANKARA_DATA.projects.forEach(buildProjectMarker);
+  globalThis.ANKARA_DATA.projects.forEach(buildProjectMarker);
 }
 
 // Acil/aktiflik seçimi değiştiğinde (modal'dan kaydedince) harita pinlerini/
 // tooltip'lerini ve kümedeki üyeliğini yeniden hesaplar — sayfayı
 // yenilemeye gerek kalmaz. Kapalı projelerin pini haritada hiç görünmez.
 function refreshProjectMarkers() {
-  ANKARA_DATA.projects.forEach((p) => {
+  globalThis.ANKARA_DATA.projects.forEach((p) => {
     const marker = projectMarkersById[p.id];
     if (!marker) return;
     const isActive = !INACTIVE_PROJECT_IDS.has(p.id);
@@ -2383,7 +2389,7 @@ function applyPositionFilter(projects) {
 const enrichedOriginIds = new Set(); // canlı Overpass sorgusu zaten yapılmış origin id'leri
 
 // Select doldur
-ANKARA_DATA.districts.forEach((d) => {
+globalThis.ANKARA_DATA.districts.forEach((d) => {
   const optGroup = document.createElement("optgroup");
   optGroup.label = d.name;
   const districtOpt = document.createElement("option");
@@ -3713,7 +3719,7 @@ const urgentModalCancel = document.getElementById("urgentModalCancel");
 const urgentModalSave = document.getElementById("urgentModalSave");
 
 // Modal açıldığı andaki urgent durumunun anlık görüntüsü. Kaydet'e basılınca
-// checkbox'lar bu görüntüyle kıyaslanır — canlı ANKARA_DATA.projects ile DEĞİL,
+// checkbox'lar bu görüntüyle kıyaslanır — canlı globalThis.ANKARA_DATA.projects ile DEĞİL,
 // çünkü modal açıkken arka planda gelen bir Sheet yenilemesi projects dizisini
 // değiştirebilir; o an canlı veriyle kıyaslamak, kullanıcının hiç dokunmadığı
 // projeleri de "değişti" sayıp yanlışlıkla geri yazmaya (veri bozulmasına) yol açıyordu.
@@ -3807,7 +3813,7 @@ const inactiveModalSave = document.getElementById("inactiveModalSave");
 let inactiveModalBaseline = new Map();
 
 function renderInactiveModalList() {
-  const sorted = [...ANKARA_DATA.projects].sort((a, b) => a.name.localeCompare(b.name, "tr"));
+  const sorted = [...globalThis.ANKARA_DATA.projects].sort((a, b) => a.name.localeCompare(b.name, "tr"));
   inactiveModalBaseline = new Map(sorted.map((p) => [p.id, Boolean(p.active)]));
   inactiveModalList.innerHTML = sorted
     .map(
@@ -3840,7 +3846,7 @@ inactiveModalSave.addEventListener("click", async () => {
   const activeIds = new Set(
     Array.from(inactiveModalList.querySelectorAll("input[type=checkbox]:checked")).map((cb) => cb.value)
   );
-  const changed = ANKARA_DATA.projects.filter((p) => (inactiveModalBaseline.get(p.id) ?? Boolean(p.active)) !== activeIds.has(p.id));
+  const changed = globalThis.ANKARA_DATA.projects.filter((p) => (inactiveModalBaseline.get(p.id) ?? Boolean(p.active)) !== activeIds.has(p.id));
   if (changed.length === 0) {
     closeInactiveModal();
     return;
@@ -3884,12 +3890,12 @@ inactiveModalSave.addEventListener("click", async () => {
 // ---------------------------------------------------------------------------
 
 // Proje listesini tamamen yeni bir kaynakla (Sheet'ten gelen veya yeni bir
-// proje eklendikten sonraki hal) değiştirir: ANKARA_DATA.projects'i günceller,
+// proje eklendikten sonraki hal) değiştirir: globalThis.ANKARA_DATA.projects'i günceller,
 // türetilmiş setleri/harita pinlerini/dropdown'ı yeniden kurar ve artık
 // güncelliğini yitirmiş olabilecek rota tahminlerini (TransitCache) temizler.
 function applyLiveProjects(projects) {
-  ANKARA_DATA.projects.length = 0;
-  projects.forEach((p) => ANKARA_DATA.projects.push(p));
+  globalThis.ANKARA_DATA.projects.length = 0;
+  projects.forEach((p) => globalThis.ANKARA_DATA.projects.push(p));
   stopApproxCoordsCache = null;
   recomputeUrgentInactiveSets();
   rebuildAllProjectMarkers();
@@ -3997,7 +4003,7 @@ addProjectForm.addEventListener("submit", async (e) => {
 
     const result = await postToSheet({ action: "add", project });
     project.id = result.id;
-    ANKARA_DATA.projects.push(project);
+    globalThis.ANKARA_DATA.projects.push(project);
     stopApproxCoordsCache = null;
     recomputeUrgentInactiveSets();
     buildProjectMarker(project);

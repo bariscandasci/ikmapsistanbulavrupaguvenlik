@@ -2502,3 +2502,7 @@ const ANKARA_DATA = {
     "stop_zeytinburnu"
   ]
 };
+// Classic script'te const pencereye yazılmaz. Vercel app.js'i ayrı
+// değerlendirdiğinde seedStaticActiveUrgentFields bu yüzden ANKARA_DATA
+// bulamıyordu. Aynı İstanbul verisi globalThis üzerinden de durur.
+globalThis.ANKARA_DATA = ANKARA_DATA;
