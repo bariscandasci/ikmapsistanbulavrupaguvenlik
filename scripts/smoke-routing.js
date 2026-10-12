@@ -105,7 +105,7 @@ vm.createContext(context);
 
 const appSource = [
   fs.readFileSync(path.join(root, "data.js"), "utf8"),
-  fs.readFileSync(path.join(root, "app.js"), "utf8"),
+  fs.readFileSync(path.join(root, "client.js"), "utf8"),
   "loadLocalTransitNetwork().then(function () { return loadLocalTransitGeometry(); }).then(function () { globalThis.__graph = transitGraph; globalThis.__estimate = estimateTransit; globalThis.__shape = rideShapeLatLngs; globalThis.__options = buildClickRouteOptions; });",
 ].join("\n");
 

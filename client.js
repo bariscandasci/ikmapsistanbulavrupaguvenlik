@@ -3,8 +3,8 @@
  * Classic script (module değil) — file:// üzerinden de çalışsın diye.
  * İstanbul proje verisi data.js içindeki ANKARA_DATA nesnesidir
  * (şema Ankara kopyasından gelir, içerik Avrupa yakasıdır).
- * Tarayıcıda data.js önce yüklenir. Vercel app.js'i tek başına
- * çalıştırırsa aynı dosya require ile alınır.
+ * Dosya adı client.js: Vercel "app.js" adını Node sunucu girişi sanır
+ * ve sayfayı 500 ile düşürür. Tarayıcıda data.js önce yüklenir.
  */
 if (!(globalThis.ANKARA_DATA && globalThis.ANKARA_DATA.projects) && typeof require === "function") {
   require("./data.js");
