@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
  * Yerel statik sunucu ve İETT vekili.
+ * Dosya adı server.js değil: Vercel bu adı Node girişi sanıp siteyi çalıştırıyor.
  *
  * GET /api/iett-schedule?hat=146T
  *   Planlanan sefer: ana durak kalkış saatleri (İETT PlanlananSeferSaati).

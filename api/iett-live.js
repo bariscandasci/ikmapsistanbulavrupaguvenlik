@@ -1,9 +1,27 @@
 const { liveFor } = require("../iett");
 
-module.exports = (req, res) => {
-  const url = new URL(req.url, "http://localhost");
-  liveFor(url.searchParams.get("hat") || "", url.searchParams.get("durak") || "").then((body) => {
-    res.setHeader("Cache-Control", "no-store");
-    res.status(200).json(body);
+function send(res, body) {
+  const data = JSON.stringify(body);
+  res.writeHead(200, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
   });
+  res.end(data);
+}
+
+module.exports = (req, res) => {
+  const raw = req && req.url ? req.url : "/";
+  let hat = "";
+  let durak = "";
+  try {
+    const url = new URL(raw, "http://localhost");
+    hat = url.searchParams.get("hat") || "";
+    durak = url.searchParams.get("durak") || "";
+  } catch (err) {
+    hat = "";
+  }
+  return liveFor(hat, durak).then(
+    (body) => send(res, body),
+    (err) => send(res, { ok: false, source: "static", message: err.message || "İETT cevap vermedi" })
+  );
 };
