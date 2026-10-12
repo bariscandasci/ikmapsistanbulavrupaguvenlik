@@ -1,8 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "buildCommand": "node scripts/export-static.js",
-  "outputDirectory": "public",
+  "outputDirectory": ".",
   "headers": [
     {
       "source": "/(.*)",
