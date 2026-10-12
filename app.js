@@ -2131,31 +2131,10 @@ function clearNavRoute() {
 }
 
 function updateNavBanner() {
+  // Mac'in konumu seçilen kalkıştan uzaksa kart "354 km Yürüyün" yazıyordu.
+  // Rota süresi sol panelde; bu kart haritada gösterilmez.
   if (!navBanner) return;
-  if (!navCues.length) {
-    navBanner.classList.add("hidden");
-    return;
-  }
-  navBanner.classList.remove("hidden");
-  const cue = navCues[Math.min(navIndex, navCues.length - 1)];
-  const meters = userFix ? haversineKm(userFix, cue) * 1000 : null;
-  const arrived = meters != null && navIndex >= navCues.length - 1 && meters <= NAV_ARRIVE_M;
-  navBanner.classList.toggle("nav-banner-arrived", arrived);
-  if (!userFix) {
-    navDistance.textContent = "Konum";
-    navTitle.textContent = cue.title;
-    navSubtitle.textContent = "Konum alınınca mesafe güncellenir. · " + (navIndex + 1) + "/" + navCues.length;
-    return;
-  }
-  if (arrived) {
-    navDistance.textContent = "Vardınız";
-    navTitle.textContent = cue.detail || cue.title;
-    navSubtitle.textContent = "Son nokta · " + navCues.length + "/" + navCues.length;
-    return;
-  }
-  navDistance.textContent = formatNavDistance(meters);
-  navTitle.textContent = cue.title;
-  navSubtitle.textContent = cue.detail + " · " + (navIndex + 1) + "/" + navCues.length;
+  navBanner.classList.add("hidden");
 }
 
 function updateLocateButton() {
