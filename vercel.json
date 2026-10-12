@@ -1,23 +1,12 @@
 {
-  "version": 2,
-  "builds": [
-    { "src": "index.html", "use": "@vercel/static" },
-    { "src": "client.js", "use": "@vercel/static" },
-    { "src": "data.js", "use": "@vercel/static" },
-    { "src": "candidates.js", "use": "@vercel/static" },
-    { "src": "live_bus.js", "use": "@vercel/static" },
-    { "src": "transit_network.json", "use": "@vercel/static" },
-    { "src": "transit_network_geometry.json", "use": "@vercel/static" },
-    { "src": "dolmus_lines.json", "use": "@vercel/static" },
-    { "src": "assets/**", "use": "@vercel/static" },
-    { "src": "api/iett-schedule.js", "use": "@vercel/node" },
-    { "src": "api/iett-live.js", "use": "@vercel/node" },
-    { "src": "api/live-arrival.js", "use": "@vercel/node" }
-  ],
-  "routes": [
-    { "handle": "filesystem" },
-    { "src": "/api/iett-schedule", "dest": "/api/iett-schedule.js" },
-    { "src": "/api/iett-live", "dest": "/api/iett-live.js" },
-    { "src": "/api/live-arrival", "dest": "/api/live-arrival.js" }
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "node scripts/export-static.js",
+  "outputDirectory": "public",
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [{ "key": "X-IK-Static", "value": "1" }]
+    }
   ]
 }
