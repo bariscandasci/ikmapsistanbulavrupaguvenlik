@@ -19,6 +19,11 @@
 // ---------------------------------------------------------------------------
 
 const CANDIDATE_STORE_KEY = "ik_ulasim_candidates_v1";
+let activeCandidateRegion = "local";
+
+function candidateStorageKey() {
+  return `${CANDIDATE_STORE_KEY}::${activeCandidateRegion}`;
+}
 
 /** Telefonu 10 haneli EGO/GSM biçimine indirger (0/+90 önekleri atılır) — dedup anahtarı bu. */
 function normalizePhone(raw) {
@@ -72,7 +77,7 @@ const CandidateStore = {
   _load() {
     if (this._mem) return this._mem;
     try {
-      this._mem = JSON.parse(localStorage.getItem(CANDIDATE_STORE_KEY) || "[]");
+      this._mem = JSON.parse(localStorage.getItem(candidateStorageKey()) || "[]");
     } catch {
       this._mem = [];
     }
@@ -92,7 +97,7 @@ const CandidateStore = {
   },
   _save() {
     try {
-      localStorage.setItem(CANDIDATE_STORE_KEY, JSON.stringify(this._mem || []));
+      localStorage.setItem(candidateStorageKey(), JSON.stringify(this._mem || []));
     } catch {
       /* localStorage kullanılamıyorsa (ör. gizli sekme) sessizce yoksay */
     }
@@ -127,6 +132,20 @@ const CandidateStore = {
   clear() {
     this._mem = [];
     this._save();
+  },
+  /** Bölge değişince aday havuzu o bölgenin anahtarına geçer. Eski havuz yalnızca Ankara Servis'e taşınır. */
+  bindRegion(slug) {
+    activeCandidateRegion = slug || "local";
+    const key = candidateStorageKey();
+    try {
+      if (!localStorage.getItem(key) && slug === "ankara-servis") {
+        const legacy = localStorage.getItem(CANDIDATE_STORE_KEY);
+        if (legacy) localStorage.setItem(key, legacy);
+      }
+    } catch {
+      /* yoksay */
+    }
+    this._mem = null;
   },
 };
 

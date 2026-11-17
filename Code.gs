@@ -1,12 +1,12 @@
 /**
  * İK Ulaşım & Proje Eşleştirme Modülü — paylaşımlı proje veritabanı + aday yorumları.
- * Bu dosyayı, "istguvavp" (ve "Comments") sayfalarını içeren Google Sheet'te
+ * Bu dosyayı, "Projeler" (ve "Comments") sayfalarını içeren Google Sheet'te
  * Uzantılar > Apps Script menüsünden açılan editöre YAPIŞTIR,
  * sonra "Dağıt > Dağıtımları yönet" ile mevcut dağıtımın YENİ SÜRÜMÜNÜ yayınla
  * (URL değişmez, sadece kod güncellenir).
  */
 
-const SHEET_NAME = "istguvavp";
+const SHEET_NAME = "Projeler";
 const FIELDS = [
   "id", "name", "sector", "address", "lat", "lng", "accessStopId",
   "shift", "salary", "meal", "transport", "referral", "gender",

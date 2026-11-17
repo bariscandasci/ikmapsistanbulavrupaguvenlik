@@ -1,12 +1,6 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "outputDirectory": ".",
-  "trailingSlash": false,
-  "headers": [
-    {
-      "source": "/(.*)",
-      "headers": [{ "key": "X-IK-Static", "value": "1" }]
-    }
-  ]
+  "installCommand": "",
+  "buildCommand": "python3 scripts/vercel_build.py",
+  "outputDirectory": "dist"
 }
